@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Bit map</title>
+    <style>
+        body{
+            background-color: darkgray;
+        }
+        #canvas {
+            cursor: crosshair;
+            border: 1px solid black;
+        }
+        #output {
+            font-size: 2px;
+        }
+    </style>
+</head>
+<body>
+
+
+<canvas id="canvas"></canvas>
+
+<p id="output"></p>
+
+<script>
+
+    (() => {
+
+        // eventually this sizing wont matter
+        const width = 128;
+        const height = 64;
+        const cvs = document.getElementById("canvas");
+        const output = document.getElementById("output");
+        output.style.width = `${width}px`;
+        const context = cvs.getContext("2d");
+        cvs.width = width;
+        cvs.height = height;
+        let drawing = false;
+        let drawingList = [];
+
+        cvs.addEventListener("mousedown", () => {
+            drawing = true
+        });
+
+        cvs.addEventListener("mouseup", () => {
+            drawing = false
+        });
+
+        cvs.addEventListener("mousemove", draw);
+
+        window.addEventListener("keydown", function(evt) {
+            if (evt.code === 'Space') {
+                context.clearRect(0, 0, cvs.width, cvs.height);
+            }
+            if (evt.code === 'Enter') {
+                let boundLimitsObj = getMaxBounds(drawingList);
+                console.log(boundLimitsObj);
+                // need to convert to min divisible by 8 top to bottom and left to right
+                // ex:
+                // bb: 52 -> 7
+                // lb: 33 -> 5
+                // rb: 77 -> 10
+                // tb: 5 ->  1
+
+                // Math.ceil((rb - lb) / 8)
+                // Math.ceil((bb - tb) / 8)
+                // ^^^^^ Size of bit map
+
+                // TODO: output size of drawing to use in Arduino code
+                //  will probs be the above
+
+                const data = context.getImageData(0, 0, cvs.width, cvs.height).data;
+                console.log(data.length);
+                let copy = [];
+                let counter = 0;
+                for (let i = 0; i < data.length; i++) {
+                    counter++;
+                    if (counter % 4 === 0) {
+                        copy.push(data[i]);
+                        counter = 0;
+                    }
+                }
+                let bitMap = [];
+                let bitString = '';
+                const w = cvs.width;
+                const h = cvs.height;
+
+                for (let i = 0; i < copy.length; i++) {
+                    let byte = copy[i];
+                    bitString += byte === 255 ? '1' : '0';
+                    if (bitString.length === 8) {
+                        bitMap.push(bitString);
+                        bitString = '';
+                    }
+                }
+
+
+                let cArray = '';
+                // assuming bitMap is 256 8 bit binary strings '11010001'
+                for (let i = 0; i < bitMap.length; ++i) {
+                    cArray += hexConvert(bitMap[i]);
+                    if (i < bitMap.length - 1) cArray += ', ';
+                    if ((i + 1) % 8 === 0) cArray += '\n ';
+                }
+                cArray += '\n}';
+                cArray += '\n}';
+
+                output.textContent = cArray;
+            }
+        })
+
+        function draw(evt) {
+            if (drawing) {
+                const rect = cvs.getBoundingClientRect()
+                const x = evt.clientX - rect.left;
+                const y = evt.clientY - rect.top;
+                // add all x and y for the drawing to then loop over and create a bouding box for
+                // to then scale the image down for a full size bit map for the size of the image
+                drawingList.push({x, y});
+
+                context.fillStyle = "black";
+                context.fillRect(x, y, 1, 1);
+            }
+        }
+
+        // take string and return hex for 8 bits
+        function hexConvert(binary) {
+            return `0x${parseInt(binary.split("").reverse().join(""), 2).toString(16).toUpperCase().padStart(2, '0')}`;
+        }
+
+        function getMaxBounds(drawingListOfXAndYs) {
+            let setX = new Set();
+            let setY = new Set();
+            for (let i = 0; i < drawingListOfXAndYs.length; ++i) {
+                const {x, y} = drawingListOfXAndYs[i];
+                setX.add(x);
+                setY.add(y);
+            }
+            let leftBound = Math.min(...Array.from(setX));
+            let rightBound = Math.max(...Array.from(setX));
+            let topBound = Math.min(...Array.from(setY));
+            let bottomBound = Math.max(...Array.from(setY));
+
+            return {leftBound, rightBound, topBound, bottomBound};
+        }
+
+    })();
+
+
+</script>
+</body>
+</html>

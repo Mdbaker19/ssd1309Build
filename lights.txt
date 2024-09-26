@@ -1,0 +1,65 @@
+#include <Adafruit_GFX.h>
+#include <MCUFRIEND_kbv.h>
+
+#include <Wire.h>
+#include <RTClib.h>
+RTC_DS3231 rtc;
+bool motion2 = false;
+
+unsigned long light1Timer = 0;
+unsigned long light2Timer = 0;
+
+long delayInterval = 4000;
+#define sensor1 2
+#define sensor2 3
+
+#define ledLightOut_side1 10
+#define ledLightOut_side2 11
+
+void setup() {
+  Wire.begin();
+  if (!rtc.begin()) {
+    Serial.println("Could not find RTC");
+  }
+
+  for (int i = 2; i < 4; i++) {
+    pinMode(i, INPUT);
+  }
+  for (int i = 10; i < 14; i++) {
+    pinMode(i, OUTPUT);
+  }
+
+  Serial.begin(9600);
+  if (rtc.lostPower()){
+    Serial.println("LOST POWER< SETTING DATE");
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  }
+}
+
+void loop() {
+
+  DateTime moment = rtc.now();
+
+  bool isDarkTime = moment.hour() >= 21 || moment.hour() <= 7;
+  if (isDarkTime) {
+    if (digitalRead(sensor1) == HIGH) {
+      digitalWrite(ledLightOut_side1, HIGH);
+      light1Timer = millis();
+    } else {
+      if (millis() - light1Timer >= delayInterval) {
+        digitalWrite(ledLightOut_side1, LOW);
+      }
+    }
+
+    if (digitalRead(sensor2) == HIGH) {
+      digitalWrite(ledLightOut_side2, HIGH);
+      light2Timer = millis();
+    } else {
+      if (millis() - light2Timer >= delayInterval) {
+        digitalWrite(ledLightOut_side2, LOW);
+      }
+    }
+  }
+
+
+}
