@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>test</title>
+    <style>
+        body {
+            background-color: darkgray;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="c" width="900" height="900"></canvas>
+
+<p>
+    Okay so this works in js... now make it in arduino..
+</p>
+<script>
+    (() => {
+        let pSize = 1;
+        function Vector(x, y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        function Thing(coords, isMe) {
+            this.coords = coords;
+            this.isMe = isMe;
+            this.move = c => {
+                if (isMe) {
+                    if (c === 'Left') {
+                        for (let i = 0; i < this.coords.length; ++i) {
+                            this.coords[i].x -= 2;
+                        }
+                    }
+                    if (c === 'Right') {
+                        for (let i = 0; i < this.coords.length; ++i) {
+                            this.coords[i].x += 2;
+                        }
+                    }
+                    if (c === 'Up') {
+                        for (let i = 0; i < this.coords.length; ++i) {
+                            this.coords[i].y -= 2;
+                        }
+                    }
+                    if (c === 'Down') {
+                        for (let i = 0; i < this.coords.length; ++i) {
+                            this.coords[i].y += 2;
+                        }
+                    }
+                }
+
+            }
+        }
+
+        function distance(a, b) {
+            return Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2));
+        }
+
+        let av1 = [
+            new Vector(10, 50),
+            new Vector(40, 50),
+            new Vector(10, 80),
+            new Vector(40, 80)
+        ];
+
+        av1 = fillAv(av1);
+
+        let thing1 = new Thing(av1, true);
+
+        let av2 = [
+            new Vector(100, 140),
+            new Vector(130, 140),
+            new Vector(100, 180),
+            new Vector(130, 180)
+        ];
+
+        av2 = fillAv(av2);
+
+        function fillAv(av) {
+            // get max x
+            // get max y
+            // add more Vectors from min x to max x with min y
+            // and from min x to max x with max y
+            // from min y to max y with min x
+            // from min y to max y with max x... (;_;)
+
+            let minx = Infinity;
+            let maxx = -Infinity;
+            let miny = Infinity;
+            let maxy = -Infinity;
+
+            for (let v = 0; v < av.length; ++v) {
+                let x = av[v].x;
+                let y = av[v].y;
+                // console.log(x, y);
+                if (x < minx) {
+                    minx = x
+                }
+                if (x > maxx) {
+                    maxx = x
+                }
+                if (y < miny) {
+                    miny = y
+                }
+                if (y > maxy) {
+                    maxy = y
+                }
+            }
+
+            // console.log(minx, maxx, miny, maxy);
+
+            for (let i = minx + 1; i < maxx; i++) {
+                av.push(new Vector(i, miny))
+            }
+            for (let i = minx + 1; i < maxx; i++) {
+                av.push(new Vector(i, maxy))
+            }
+            for (let i = miny + 1; i < maxy; i++) {
+                av.push(new Vector(minx, i))
+            }
+            for (let i = miny + 1; i < maxy; i++) {
+                av.push(new Vector(maxx, i))
+            }
+
+            // console.log(av)
+            return av;
+
+        }
+
+        let thing2 = new Thing(av2, false);
+
+        window.addEventListener("keydown", e => {
+            let key = e.code.replace("Arrow", "");
+            thing1.move(key);
+
+            if (key === 'Enter') {
+                console.log(checkCollision(thing1.coords, thing1.coords.length, thing2.coords, thing2.coords.length, 2));
+            }
+        })
+
+
+        console.log(distance(new Vector(10, 20), new Vector(10, 22)));
+
+        function checkCollision(a, s, b, s2, c) {
+            let distances = [];
+            for (let i = 0; i < s; ++i) {
+                for (let j = 0; j < s2; ++j) {
+                    let d = distance(a[i], b[j]);
+                    distances.push(d);
+                    if (d < c) {
+                        return true;
+                    }
+                }
+            }
+            console.log(distances)
+            return false;
+        }
+
+        const c = document.getElementById("c");
+        const cc = c.getContext("2d");
+        const w = c.width;
+        const h = c.height;
+
+        function fill(x, y, w, h, c) {
+            cc.fillStyle = c;
+            cc.fillRect(x, y, w, h);
+        }
+
+        function load() {
+            draw();
+        }
+
+        function draw() {
+            fill(0, 0, w, h, '#062c65');
+            for (let i = 0; i < av1.length; ++i) {
+                let v = av1[i];
+                fill(v.x, v.y, pSize, pSize, "#fff");
+            }
+            for (let i = 0; i < av2.length; ++i) {
+                let v2 = av2[i];
+                fill(v2.x, v2.y, pSize, pSize, "#fff");
+            }
+        }
+
+        setInterval(load, 50);
+
+    })();
+</script>
+</body>
+</html>

@@ -1,4 +1,3 @@
-Readme typo 😭
 
 
 Will function as a holder for the arduino prjects to git

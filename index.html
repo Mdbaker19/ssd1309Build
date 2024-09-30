@@ -30,9 +30,10 @@
 
     (() => {
 
+
         // eventually this sizing wont matter
-        const width = 128;
-        const height = 64;
+        const width = 8;
+        const height = 8;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
         output.style.width = `${width}px`;
@@ -72,6 +73,31 @@
 
                 // TODO: output size of drawing to use in Arduino code
                 //  will probs be the above
+
+                // tb is the start of when to pay attention to adding stuff to copy
+                // if tb is 40 or something
+                // skip 128 * 39 * 4 amount of pieces in data
+                // +
+                // (lb amount - 1) * 4
+                // that would be top left start position of the drawing to begin checking for the drawing
+
+                // go until bb meets rb
+
+                // also only count bb starting at lb
+
+                // lb and rb are always used...
+
+                /**
+                 I want to return a box size around my drawing.. no extra space..
+
+                 ..................
+                 ....__________....
+                 ...|....00...|....
+                 ...|..0000...|....
+                 ...|...00....|....
+                 ...-----------....
+
+                 * */
 
                 const data = context.getImageData(0, 0, cvs.width, cvs.height).data;
                 console.log(data.length);
