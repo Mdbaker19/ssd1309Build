@@ -32,11 +32,11 @@
 
 
         // eventually this sizing wont matter
-        const width = 16;
+        const width = 32;
         const height = 16;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
-        output.style.width = `${width}px`;
+        output.style.width = `${width*2}px`;
         const context = cvs.getContext("2d");
         cvs.width = width;
         cvs.height = height;
@@ -110,31 +110,21 @@
                         counter = 0;
                     }
                 }
-                let bitMap = [];
-                let bitString = '';
+                let bitMap = ['(['];
                 const w = cvs.width;
                 const h = cvs.height;
 
-                for (let i = 0; i < copy.length; i++) {
+                for (let i = copy.length - 1; i >= 0; --i) {
                     let byte = copy[i];
-                    bitString += byte === 255 ? '1' : '0';
-                    if (bitString.length === 8) {
-                        bitMap.push(bitString);
-                        bitString = '';
-                    }
+                    bitMap.push(`${byte}, `);
                 }
 
+                let piece = bitMap[bitMap.length - 1];
+                bitMap[bitMap.length - 1] = piece.split(',')[0];
 
-                let cArray = '';
-                // assuming bitMap is 256 8 bit binary strings '11010001'
-                for (let i = 0; i < bitMap.length; ++i) {
-                    cArray += hexConvert(bitMap[i]);
-                    if (i < bitMap.length - 1) cArray += ', ';
-                    if ((i + 1) % 8 === 0) cArray += '\n ';
-                }
-                cArray += '\n}';
+                bitMap.push('])');
 
-                output.textContent = cArray;
+                output.textContent = bitMap.join('');
             }
         })
 
@@ -152,10 +142,6 @@
             }
         }
 
-        // take string and return hex for 8 bits
-        function hexConvert(binary) {
-            return `0x${parseInt(binary.split("").reverse().join(""), 2).toString(16).toUpperCase().padStart(2, '0')}`;
-        }
 
         function getMaxBounds(drawingListOfXAndYs) {
             let setX = new Set();
@@ -179,5 +165,3 @@
 </script>
 </body>
 </html>
-spi = SPI(0, baudrate=10000000, sck=Pin(18), mosi=Pin(19))
-display = Display(spi, dc=Pin(16), cs=Pin(17), rst=Pin(20))
