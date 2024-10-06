@@ -29,6 +29,7 @@
 
 <p id="output"></p>
 <p id="sizeOutput"></p>
+<p id="constrainedOutput"></p>
 
 <script>
 
@@ -41,8 +42,10 @@
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
         const sizeOutput = document.getElementById("sizeOutput");
+        const constrainedOutput = document.getElementById("constrainedOutput");
         output.style.width = `${width*2}px`;
         sizeOutput.style.width = `${width*2}px`;
+        constrainedOutput.style.width = `${width*2}px`;
         const context = cvs.getContext("2d");
         cvs.width = width;
         cvs.height = height;
@@ -135,12 +138,37 @@
                 }
                 const constrainedBoundingBoxObj = getMaxBounds(xyPosData, false, true);
                 let constrainedBitMap = ['(['];
-
+                console.log(constrainedBoundingBoxObj);
+                let boundTrackerX = 0;
+                let boundTrackerY = 0;
                 let bitMap = ['(['];
 
                 for (let i = copy.length - 1; i >= 0; --i) {
                     let byte = copy[i];
                     bitMap.push(`${byte}, `);
+
+
+                }
+
+                for (let i = 0; i < copy.length; ++i) {
+                    let byte = copy[i];
+                    bitMap.push(`${byte}, `);
+                    //{leftBound: 10, rightBound: 13, topBound: 4, bottomBound: 6}
+                    // only when x is at least rightBound and y is at least bottomBound
+                    // push until at left bound until top bound..
+                    if (boundTrackerX >= constrainedBoundingBoxObj.leftBound &&
+                        boundTrackerY >= constrainedBoundingBoxObj.topBound &&
+
+                        boundTrackerY <= constrainedBoundingBoxObj.bottomBound &&
+                        boundTrackerX <= constrainedBoundingBoxObj.rightBound) {
+                        constrainedBitMap.push(`${byte}, `);
+                    }
+
+                    boundTrackerX++;
+                    if (boundTrackerX >= 32) {
+                        boundTrackerY++;
+                        boundTrackerX %= 32;
+                    }
                 }
 
                 let piece = bitMap[bitMap.length - 1];
@@ -148,11 +176,17 @@
 
                 bitMap.push('])');
 
+                let constrainedPiece = constrainedBitMap[constrainedBitMap.length - 1];
+                constrainedBitMap[constrainedBitMap.length - 1] = constrainedPiece.split(',')[0];
+
+                constrainedBitMap.push('])');
+
                 // filtered one will be get the bounding limits to start
                 // count that many points of bitmap starting with a 255 sighting ? what about I object shape?
 
                 output.textContent = bitMap.join('');
                 sizeOutput.textContent = `${boundLimitsObj.rightBound - boundLimitsObj.leftBound} x ${boundLimitsObj.bottomBound - boundLimitsObj.topBound}`;
+                constrainedOutput.textContent = constrainedBitMap.join('');
             }
         })
 
@@ -183,6 +217,7 @@
                     setY.add(y);
                 }
             }
+
             let leftBound = Math.min(...Array.from(setX));
             let rightBound = Math.max(...Array.from(setX));
             let topBound = Math.min(...Array.from(setY));
