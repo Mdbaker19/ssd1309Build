@@ -15,6 +15,9 @@
             border: 1px solid black;
         }
         #output {
+            margin-bottom: 16px;
+        }
+        p {
             font-size: 2px;
         }
     </style>
@@ -25,6 +28,7 @@
 <canvas id="canvas"></canvas>
 
 <p id="output"></p>
+<p id="sizeOutput"></p>
 
 <script>
 
@@ -36,7 +40,9 @@
         const height = 16;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
+        const sizeOutput = document.getElementById("sizeOutput");
         output.style.width = `${width*2}px`;
+        sizeOutput.style.width = `${width*2}px`;
         const context = cvs.getContext("2d");
         cvs.width = width;
         cvs.height = height;
@@ -58,7 +64,7 @@
                 context.clearRect(0, 0, cvs.width, cvs.height);
             }
             if (evt.code === 'Enter') {
-                let boundLimitsObj = getMaxBounds(drawingList);
+                let boundLimitsObj = getMaxBounds(drawingList, true, false);
                 console.log(boundLimitsObj);
                 // need to convert to min divisible by 8 top to bottom and left to right
                 // ex:
@@ -100,19 +106,37 @@
                  * */
 
                 const data = context.getImageData(0, 0, cvs.width, cvs.height).data;
-                console.log(data.length);
+                console.log(data);
                 let copy = [];
                 let counter = 0;
+
+                // to address above problem..
+                // need to % width to then increment a y pos and then reset x to 0
+                // store as [{x: xPos, y: yPos, isOn: is255}, {...}, {...}, ...]
+                let xPos = 0;
+                let yPos = 0;
+                let xyPosData = [];
                 for (let i = 0; i < data.length; i++) {
                     counter++;
                     if (counter % 4 === 0) {
                         copy.push(data[i]);
                         counter = 0;
+                        xyPosData.push({
+                            x: xPos,
+                            y: yPos,
+                            isOn: data[i] === 255
+                        });
+                        xPos++;
+                        if (xPos >= 32) {
+                            yPos++;
+                            xPos %= 32;
+                        }
                     }
                 }
+                const constrainedBoundingBoxObj = getMaxBounds(xyPosData, false, true);
+                let constrainedBitMap = ['(['];
+
                 let bitMap = ['(['];
-                const w = cvs.width;
-                const h = cvs.height;
 
                 for (let i = copy.length - 1; i >= 0; --i) {
                     let byte = copy[i];
@@ -124,7 +148,11 @@
 
                 bitMap.push('])');
 
+                // filtered one will be get the bounding limits to start
+                // count that many points of bitmap starting with a 255 sighting ? what about I object shape?
+
                 output.textContent = bitMap.join('');
+                sizeOutput.textContent = `${boundLimitsObj.rightBound - boundLimitsObj.leftBound} x ${boundLimitsObj.bottomBound - boundLimitsObj.topBound}`;
             }
         })
 
@@ -135,7 +163,9 @@
                 const y = evt.clientY - rect.top;
                 // add all x and y for the drawing to then loop over and create a bouding box for
                 // to then scale the image down for a full size bit map for the size of the image
-                drawingList.push({x, y});
+                if (x <= width && x >= 0 && y <= height && y >= 0) {
+                    drawingList.push({x, y});
+                }
 
                 context.fillStyle = "black";
                 context.fillRect(x, y, 1, 1);
@@ -143,18 +173,25 @@
         }
 
 
-        function getMaxBounds(drawingListOfXAndYs) {
+        function getMaxBounds(drawingListOfXAndYs, address0th, addressIsOn) {
             let setX = new Set();
             let setY = new Set();
             for (let i = 0; i < drawingListOfXAndYs.length; ++i) {
-                const {x, y} = drawingListOfXAndYs[i];
-                setX.add(x);
-                setY.add(y);
+                const {x, y, isOn} = drawingListOfXAndYs[i];
+                if (address0th || (isOn && addressIsOn)) {
+                    setX.add(x);
+                    setY.add(y);
+                }
             }
             let leftBound = Math.min(...Array.from(setX));
             let rightBound = Math.max(...Array.from(setX));
             let topBound = Math.min(...Array.from(setY));
             let bottomBound = Math.max(...Array.from(setY));
+            // address inclusive left and top. Say a line from 0 to 1 that is 2 thick
+            if (address0th) {
+                rightBound++;
+                bottomBound++;
+            }
 
             return {leftBound, rightBound, topBound, bottomBound};
         }
