@@ -64,37 +64,14 @@
 
         window.addEventListener("keydown", function(evt) {
             if (evt.code === 'Space') {
+                // TODO: this does not reset the get image data so kinda useless
+                // probably need to call     putImageData(imagedata: ImageData, dx: number, dy: number): void;
                 context.clearRect(0, 0, cvs.width, cvs.height);
             }
             if (evt.code === 'Enter') {
                 let boundLimitsObj = getMaxBounds(drawingList, true, false);
                 console.log(boundLimitsObj);
-                // need to convert to min divisible by 8 top to bottom and left to right
-                // ex:
-                // bb: 52 -> 7
-                // lb: 33 -> 5
-                // rb: 77 -> 10
-                // tb: 5 ->  1
 
-                // Math.ceil((rb - lb) / 8)
-                // Math.ceil((bb - tb) / 8)
-                // ^^^^^ Size of bit map
-
-                // TODO: output size of drawing to use in Arduino code
-                //  will probs be the above
-
-                // tb is the start of when to pay attention to adding stuff to copy
-                // if tb is 40 or something
-                // skip 128 * 39 * 4 amount of pieces in data
-                // +
-                // (lb amount - 1) * 4
-                // that would be top left start position of the drawing to begin checking for the drawing
-
-                // go until bb meets rb
-
-                // also only count bb starting at lb
-
-                // lb and rb are always used...
 
                 /**
                  I want to return a box size around my drawing.. no extra space..
@@ -137,7 +114,7 @@
                     }
                 }
                 const constrainedBoundingBoxObj = getMaxBounds(xyPosData, false, true);
-                let constrainedBitMap = ['(['];
+                let constrainedBitMap = [];
                 console.log(constrainedBoundingBoxObj);
                 let boundTrackerX = 0;
                 let boundTrackerY = 0;
@@ -176,15 +153,17 @@
 
                 bitMap.push('])');
 
+                constrainedBitMap.reverse();
                 let constrainedPiece = constrainedBitMap[constrainedBitMap.length - 1];
                 constrainedBitMap[constrainedBitMap.length - 1] = constrainedPiece.split(',')[0];
 
+                constrainedBitMap.unshift('([');
                 constrainedBitMap.push('])');
 
                 // filtered one will be get the bounding limits to start
                 // count that many points of bitmap starting with a 255 sighting ? what about I object shape?
 
-                output.textContent = bitMap.join('');
+                //output.textContent = bitMap.join('');
                 sizeOutput.textContent = `${boundLimitsObj.rightBound - boundLimitsObj.leftBound} x ${boundLimitsObj.bottomBound - boundLimitsObj.topBound}`;
                 constrainedOutput.textContent = constrainedBitMap.join('');
             }
