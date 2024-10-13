@@ -91,150 +91,6 @@ def ui_display(player, isOne=True):
 
 
 
-
-
-def test_life():
-
-    text_width = font.measure_text("All dead!")
-
-    grid = [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    ]
-    lifeGens = 29
-    life = Life(grid, lifeGens, len(grid), 1, len(grid), len(grid[0]))
-    ba, lw, lh = life.show_self(grid)
-    d2.draw_bitmap_array_raw(ba, 50, 26, lw, lh)
-    # need to draw a bouding box around the life sim
-    d2.clear()
-    ui_display(True)
-    ui_display(False)
-    d1.present()
-    d2.present()
-
-    for i in range(lifeGens):
-        d2.present()
-        grid = life.update_grid(grid)
-        ba2, live_count = life.show_self(grid, nextGen=True)
-        d2.draw_bitmap_array_raw(ba2, 50, 26, lw, lh)
-        sleep(.005)
-        if live_count <= 0:
-            draw_text(128, 35, "All dead!")
-            d2.present()
-            sleep(2)
-            break
-    return
-
-
-
-def test_movement():
-    player, enemy, objects = load_sprites()
-    door = bytearray(objects['door_closed'])
-    e = bytearray(enemy['sprite'])
-    left = bytearray(player['sprite_left'])
-    right = bytearray(player['sprite_right'])
-    front = bytearray(player['sprite_front'])
-    back = bytearray(player['sprite_back'])
-    raw_test = [left, right, front, back]
-    # x 0 is right side here..
-    spriteX = 2
-    spriteY = 25
-    onTopScreen = True
-    hasFlipped = False
-    spriteW = 16
-    spriteH = 20
-
-    for i in range(150):
-        mover = 0
-        ymover = 0
-        sprite_arr = raw_test[0]
-
-        going_left = b1.value() == 1 and b2.value() == 0
-        going_right = b2.value() == 1 and b1.value() == 0
-        going_up = b2.value() == 1 and b1.value() == 1
-        going_down = b2.value() == 0 and b1.value() == 0
-
-        if going_down:
-            sprite_arr = raw_test[3]
-            ymover = 4
-            mover = 0
-        elif going_up:
-            sprite_arr = raw_test[2]
-            ymover = -4
-            mover = 0
-        elif going_left:
-            mover = 5
-            sprite_arr = raw_test[0]
-            ymover = 0
-        elif going_right:
-            mover = -5
-            sprite_arr = raw_test[1]
-            ymover = 0
-
-        if onTopScreen:
-            if hasFlipped:
-                d2.clear_buffers()
-                d2.present()
-                hasFlipped = False
-
-            d1.draw_bitmap_array_raw(sprite_arr, spriteX, spriteY, spriteW, spriteH)
-            d1.present()
-            sleep(.10)
-            d1.clear_buffers()
-        else:
-            if hasFlipped:
-                d1.clear_buffers()
-                d1.present()
-                hasFlipped = False
-
-            d2.draw_bitmap_array_raw(sprite_arr, spriteX, spriteY, spriteW, spriteH)
-            d2.present()
-            sleep(.10)
-            d2.clear_buffers()
-
-        spriteX += mover
-        #spriteY += ymover
-
-        spriteAtTop = spriteY > H - spriteH
-        spriteAtLeft = spriteX >= W - spriteW
-
-        if spriteAtLeft:
-            spriteX = W - spriteW
-        elif spriteX <= 0:
-            spriteX = 0
-
-        if spriteAtTop and onTopScreen: # bound to top screen top
-            spriteY = H - spriteH
-        elif spriteY <= 0 and onTopScreen: # move from top screen to bottom screen
-            spriteY = H - spriteH
-            onTopScreen = False
-            hasFlipped = True
-        elif spriteAtTop and not onTopScreen: # move from bottom screen to top screen
-            spriteY = 0
-            onTopScreen = True
-            hasFlipped = True
-        elif spriteY <= 0 and not onTopScreen: # bound to bottom of bottom screen
-            spriteY = 0
-
-        d1.draw_bitmap_array_raw(e, 50, 38, 14, 14)
-        print(util.check_for_collision(spriteX, spriteY, spriteW, spriteH, 50, 38, 14, 14))
-
-    d1.clear()
-    d2.clear()
-    return
-
-
 def load_sprites():
     with open('sprites.json', 'r') as file:
         data = json.load(file)
@@ -283,7 +139,8 @@ def parse_save_state(e):
 # when enemy hit, spawn new on at new randome y
 # player can move up and down at fixed x based on btns pushed
 # snowball thrown every 250ms at given rate
-def test_snowball_fight():
+def test_snowball_fight(player):
+    test_ui(player)
     player, enemy, objects = load_sprites()
     snowball = bytearray(objects['snowball'])
     e = bytearray(enemy['sprite'])
@@ -294,19 +151,30 @@ def test_snowball_fight():
     pw = 16
     ey = 30
     es = 14
+    ex = 0
     move_interval = 3
     snowballs = []
     max_snow = 10
     snowball_interval = 500
+    enemy_attack_interval = 1000
+    e_snow = []
+    e_prev_time = ticks_ms()
     prev_time = ticks_ms()
-    for i in range(180):
+    for i in range(100):
         curr_time = ticks_ms()
         if ticks_diff(curr_time, prev_time) >= snowball_interval:
             prev_time = curr_time
             if len(snowballs) < max_snow:
                 sy = int(py + (ph / 3))
-                new_snow = Projectile(px, sy)
+                # projectile class can take in own bytearray to render, but not necessary as they are all snowballs, no need for extra refs
+                new_snow = Projectile(px, sy, random.randint(-9999, 9999))
                 snowballs.append(new_snow)
+        if ticks_diff(curr_time, e_prev_time) >= enemy_attack_interval:
+            e_prev_time = curr_time
+            if len(e_snow) < max_snow:
+                sy = int(ey + (es / 3))
+                new_snow = Projectile(ex, sy, random.randint(-9999, 9999))
+                e_snow.append(new_snow)
 
         going_up = b1.value() == 1
         going_down = b2.value() == 1
@@ -316,47 +184,60 @@ def test_snowball_fight():
         elif going_down:
             py += move_interval
 
-        if py >= H - 16:
-            py = H - 16
+        if py >= H - ph:
+            py = H - ph
         if py <= 0:
             py = 0
 
         d2.draw_bitmap_array_raw(right, px, py, pw, ph)
         d2.draw_bitmap_array_raw(e, 0, ey, es, es)
         snowballs = [s for s in snowballs if s.x >= 0]
+        e_snow = [s for s in e_snow if s.x <= W]
         for s in snowballs:
             s.increment_x(-4)
             d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
             # minor optimize check, snowball cant contact if not close enough on x axis
-            if s.x <= 15:
-                if util.check_for_collision(0, ey, es, es, s.x, s.y, 5, 4):
-                    ey = random.randint(0, 49)
+            if s.x <= es:
+                if util.check_for_collision(ex, ey, es, es, s.x, s.y, 5, 4):
+                    ey = random.randint(0, H - es)
                     print("HIT EM!")
+
+        for s in e_snow:
+            s.increment_x(2)
+            d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
+            # minor optimize check, snowball cant contact if not close enough on x axis
+            if s.x >= px:
+                if util.check_for_collision(px, py, pw, ph, s.x, s.y, 5, 4):
+                    print("Health Loss!!")
+                    # could prob optimize so no list interpilation is done here again like above.., but was taking more than one hit
+                    e_snow = [sn for sn in e_snow if sn.ide != s.ide]
+
         d2.present()
         sleep(.08)
 
         d2.clear_buffers()
 
-    sleep(1)
     return
 
+def save_game_data(data):
+    eeprom.eeprom_write(data)
+    return
 
 '''
 This returns a list of len 255 of ints ranging from 0-255 themselves
 255 should be ignored as that is considered empty space
-
+'''
 eeprom = Eeprom(0x00, i2c_memory)
-#eeprom.eeprom_write([1, 0, 1, 10, 3, 2, 1, 2, 0])
 read_value = eeprom.eeprom_read()
 print(f"Read from eeprom: {read_value}")
 
 save_state_player_data = parse_save_state(read_value)
-'''
+
 #test_life()
 #test_movement()
 #test_ui(save_state_player_data)
 #test_enemy_and_player_render()
-test_snowball_fight()
+test_snowball_fight(save_state_player_data)
 
 sleep(2)
 d1.cleanup()
@@ -371,7 +252,8 @@ print('Done.')
 get collision detection figured out √
 get the UI figured out √
 load different levels
-kill something
+kill something √
+enemy attack me and health decrement
 create a parse function and list of readable inventory for save state loading
 Load a list of save state data and populate UI elements - player level, inventory √
 
