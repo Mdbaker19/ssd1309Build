@@ -1,10 +1,12 @@
 """x:0, y:0 is generally bottom right"""
 from time import sleep
-from machine import Pin, SPI, ADC
+from machine import Pin, SPI, ADC, I2C
 from xglcd_font import XglcdFont
 from ssd1309 import Display
 from life import Life
 from util import Util
+from eeprom import Eeprom
+from player import Player
 import json
 import math
 
@@ -13,15 +15,18 @@ import math
 #right -15x22
 #front -16x23
 #back -16x21
-pot = ADC(Pin(26))
-def _map(v, fmin=25, fmax=255, tmin=1, tmax=100):
-    return (v - fmin) * (tmax - tmin) // (fmax - fmin) + tmin
 
+b1 = Pin(5, Pin.IN, Pin.PULL_UP)
+b2 = Pin(4, Pin.IN, Pin.PULL_UP)
+
+i2c_memory = I2C(0, scl=Pin(1), sda=Pin(0), freq=50000)
 
 
 W = 128
 H = 64
-font = XglcdFont('Wendy7x8.c', 7, 8)
+font_H = 8
+'''Create another font, smaller to show enemy lvl values and required kill counts above doors on map?'''
+font = XglcdFont('Wendy7x8.c', 7, font_H)
 
 spi = SPI(0, baudrate=10000000, sck=Pin(18), mosi=Pin(19))
 d1 = Display(spi, dc=Pin(16), cs=Pin(17), rst=Pin(20))
@@ -31,9 +36,15 @@ spi2 = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11))
 d2 = Display(spi2, dc=Pin(12), cs=Pin(13), rst=Pin(2))
 util = Util()
 
+
+'''
+MOVE TO xglcdFont
+'''
 # when x at 0 is right side of screen == text end position at 0
 # x: 128 is left side of screen
 # does not erase to just draw screen, can overlay an existing bit map
+# can take f strings for text
+''' Need to return total text height especially for next line wrapping'''
 def draw_text(x, y, text, padding=0, isOne=False):
     text_width = font.measure_text(text)
     if isOne:
@@ -46,14 +57,39 @@ def text_position_X(desiredX, text_w, padding):
         return text_w - desiredX + padding
     else:
         return desiredX - padding
+'''
+'''
 
-def ui_display(isOne):
+
+def test_ui(player):
+    ui_display(player)
+    d1.present()
+    return
+
+'''Get all text width to normalize the position they are drawn at?
+Level:    19
+Health:   100
+Items:    []
+(self, lvl, exp, expReq, hp, attack, defense, speed, mana, money)
+'''
+def ui_display(player, isOne=True):
+    ui_rows = 5
+    level = 19
+
     if isOne:
-        draw_text(128, 25, "Health: 100", padding=2, isOne=True)
-        draw_text(128, 45, "Items: []", padding=2, isOne=True)
+        draw_text(128, 52, "Makadee", padding=2, isOne=True)
+        draw_text(128, 43, f"Mana: {player.mana}", padding=2, isOne=True)
+        draw_text(128, 34, f"Health: {player.hp}", padding=2, isOne=True)
+        draw_text(128, 25, f"Level: {player.lvl}", padding=2, isOne=True)
+        draw_text(128, 16, "Items: []", padding=2, isOne=True)
+        draw_text(128, 7, f"Exp: {player.exp}/{player.expReq}", padding=2, isOne=True)
         d1.draw_rectangle(0, 0, W, H)
     else:
         d2.draw_rectangle(0, 0, W, H)
+
+
+
+
 
 
 def test_life():
@@ -99,67 +135,201 @@ def test_life():
             break
     return
 
-def test_movement():
 
-    with open('sprites.json', 'r') as file:
-        data = json.load(file)
-    left = bytearray(data['player_sprite_left'])
-    right = bytearray(data['player_sprite_right'])
-    front = bytearray(data['player_sprite_front'])
-    back = bytearray(data['player_sprite_back'])
+
+def test_movement():
+    player, enemy, objects = load_sprites()
+    door = bytearray(objects['door_closed'])
+    e = bytearray(enemy['sprite'])
+    left = bytearray(player['sprite_left'])
+    right = bytearray(player['sprite_right'])
+    front = bytearray(player['sprite_front'])
+    back = bytearray(player['sprite_back'])
     raw_test = [left, right, front, back]
     # x 0 is right side here..
-    x = 2
-
-    d1.present()
-    sleep(2)
+    spriteX = 2
+    spriteY = 25
+    onTopScreen = True
+    hasFlipped = False
+    spriteW = 16
+    spriteH = 20
 
     for i in range(150):
-        # >> 8 -> 65535 to 255
-        pot_value = pot.read_u16() >> 8
-#        print(f"pot_value: {pot_value}")
-        mover = 5
+        mover = 0
+        ymover = 0
         sprite_arr = raw_test[0]
 
-        # somehow use these to determine if dir change should show front or back profile
-        going_left = True
-        switched_dir = False
-        spriteW = 14
+        going_left = b1.value() == 1 and b2.value() == 0
+        going_right = b2.value() == 1 and b1.value() == 0
+        going_up = b2.value() == 1 and b1.value() == 1
+        going_down = b2.value() == 0 and b1.value() == 0
 
-        # this is screen flicker like crazy.. -> clear_buffers is way faster than clear()
-        if pot_value > 180:
+        if going_down:
+            sprite_arr = raw_test[3]
+            ymover = 4
+            mover = 0
+        elif going_up:
+            sprite_arr = raw_test[2]
+            ymover = -4
+            mover = 0
+        elif going_left:
             mover = 5
             sprite_arr = raw_test[0]
-            spriteW = 14
-            print("Going left")
-        else:
+            ymover = 0
+        elif going_right:
             mover = -5
             sprite_arr = raw_test[1]
-            spriteW = 15
-            print("Going right")
+            ymover = 0
 
-        d1.draw_bitmap_array_raw(sprite_arr, x, 30, spriteW, 22)
+        if onTopScreen:
+            if hasFlipped:
+                d2.clear_buffers()
+                d2.present()
+                hasFlipped = False
 
-        d1.present()
-        x += mover
-        d1.clear_buffers()
-        sleep(1)
+            d1.draw_bitmap_array_raw(sprite_arr, spriteX, spriteY, spriteW, spriteH)
+            d1.present()
+            sleep(.10)
+            d1.clear_buffers()
+        else:
+            if hasFlipped:
+                d1.clear_buffers()
+                d1.present()
+                hasFlipped = False
+
+            d2.draw_bitmap_array_raw(sprite_arr, spriteX, spriteY, spriteW, spriteH)
+            d2.present()
+            sleep(.10)
+            d2.clear_buffers()
+
+        spriteX += mover
+        #spriteY += ymover
+
+        spriteAtTop = spriteY > H - spriteH
+        spriteAtLeft = spriteX >= W - spriteW
+
+        if spriteAtLeft:
+            spriteX = W - spriteW
+        elif spriteX <= 0:
+            spriteX = 0
+
+        if spriteAtTop and onTopScreen: # bound to top screen top
+            spriteY = H - spriteH
+        elif spriteY <= 0 and onTopScreen: # move from top screen to bottom screen
+            spriteY = H - spriteH
+            onTopScreen = False
+            hasFlipped = True
+        elif spriteAtTop and not onTopScreen: # move from bottom screen to top screen
+            spriteY = 0
+            onTopScreen = True
+            hasFlipped = True
+        elif spriteY <= 0 and not onTopScreen: # bound to bottom of bottom screen
+            spriteY = 0
+
+        d1.draw_bitmap_array_raw(e, 50, 38, 14, 14)
+        print(util.check_for_collision(spriteX, spriteY, spriteW, spriteH, 50, 38, 14, 14))
+
     d1.clear()
+    d2.clear()
     return
 
-def test_better():
-    ui_display(True)
+
+def load_sprites():
+    with open('sprites.json', 'r') as file:
+        data = json.load(file)
+    player = data['player']
+    # sitting - 15x11
+    # jumping - 12x12
+    enemy = data['enemy']
+    objects = data['objects'] # door: 25x11
+
+    return (player, enemy, objects)
+
+
+def test_enemy_and_player_render():
+    player, enemy, objects = load_sprites()
+    door_open = bytearray(objects['door_open'])
+    door = bytearray(objects['door_closed'])
+    grave = bytearray(objects['grave'])
+    e = bytearray(enemy['sprite'])
+    left = bytearray(player['sprite_left'])
+    right = bytearray(player['sprite_right'])
+    front = bytearray(player['sprite_front'])
+    back = bytearray(player['sprite_back'])
+    raw_test = [left, right, front, back]
+
+
+    d2.draw_bitmap_array_raw(front, 30, 30, 16, 20)
+    d2.draw_bitmap_array_raw(e, 50, 30, 14, 14)
+    d2.draw_bitmap_array_raw(grave, 20, 20, 13, 11)
+    d1.draw_bitmap_array_raw(door, 50, 50, 25, 11)
+    d1.draw_bitmap_array_raw(door_open, 50, 10, 25, 11)
     d1.present()
+    d2.present()
+    sleep(10)
+
+
     return
 
+# (self, lvl, exp, expReq, hp, attack, defense, speed, mana, money):
+def parse_save_state(e):
+    player = Player(e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8])
+    return player
+
+
+def test_snowball_fight():
+    player, enemy, objects = load_sprites()
+    snowball = bytearray(objects['snowball'])
+    e = bytearray(enemy['sprite'])
+    right = bytearray(player['sprite_right'])
+
+
+    d2.draw_bitmap_array_raw(right, 30, 30, 16, 20)
+    d2.draw_bitmap_array_raw(e, 50, 30, 14, 14)
+    d2.draw_bitmap_array_raw(snowball, 20, 20, 13, 11)
+    d1.present()
+    sleep(10)
+
+
+    return
+
+
+    return
+
+
+'''
+This returns a list of len 255 of ints ranging from 0-255 themselves
+255 should be ignored as that is considered empty space
+
+eeprom = Eeprom(0x00, i2c_memory)
+#eeprom.eeprom_write([1, 0, 1, 10, 3, 2, 1, 2, 0])
+read_value = eeprom.eeprom_read()
+print(f"Read from eeprom: {read_value}")
+
+save_state_player_data = parse_save_state(read_value)
+'''
 #test_life()
-test_movement()
-test_better()
+#test_movement()
+#test_ui(save_state_player_data)
+#test_enemy_and_player_render()
+test_snowball_fight()
 
 sleep(2)
 d1.cleanup()
 d2.cleanup()
+
+
 print('Done.')
 
 
+'''
+
+get collision detection figured out √
+get the UI figured out √
+load different levels
+kill something
+create a parse function and list of readable inventory for save state loading
+Load a list of save state data and populate UI elements - player level, inventory √
+
+'''
 

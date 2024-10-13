@@ -37,8 +37,8 @@
 
 
         // eventually this sizing wont matter
-        const width = 16;
-        const height = 24;
+        const width = 14;
+        const height = 14;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
         const sizeOutput = document.getElementById("sizeOutput");
@@ -46,12 +46,13 @@
         output.style.width = `${width*2}px`;
         sizeOutput.style.width = `${width*2}px`;
         constrainedOutput.style.width = `${width*2}px`;
-        const context = cvs.getContext("2d");
+        const context = cvs.getContext("2d", { willReadFrequently: true });
         cvs.width = width;
         cvs.height = height;
         let drawing = false;
         let drawingList = [];
 
+        let isErasing = false;
         cvs.addEventListener("mousedown", () => {
             drawing = true
         });
@@ -64,9 +65,8 @@
 
         window.addEventListener("keydown", function(evt) {
             if (evt.code === 'Space') {
-                // TODO: this does not reset the get image data so kinda useless
-                // probably need to call     putImageData(imagedata: ImageData, dx: number, dy: number): void;
-                context.clearRect(0, 0, cvs.width, cvs.height);
+                isErasing = !isErasing;
+                console.log(isErasing)
             }
             if (evt.code === 'KeyA') {
                 const sW = 314;
@@ -210,6 +210,11 @@
                 }
 
                 context.fillStyle = "black";
+                if (isErasing) {
+                    context.globalCompositeOperation = "destination-out"
+                } else {
+                    context.globalCompositeOperation = "source-over"
+                }
                 context.fillRect(x, y, 1, 1);
             }
         }
@@ -249,6 +254,9 @@
             }
             return d;
         }
+
+
+        
     })();
 
 
