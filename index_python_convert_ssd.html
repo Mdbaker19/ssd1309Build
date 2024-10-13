@@ -37,8 +37,8 @@
 
 
         // eventually this sizing wont matter
-        const width = 32;
-        const height = 16;
+        const width = 16;
+        const height = 24;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
         const sizeOutput = document.getElementById("sizeOutput");
@@ -67,6 +67,35 @@
                 // TODO: this does not reset the get image data so kinda useless
                 // probably need to call     putImageData(imagedata: ImageData, dx: number, dy: number): void;
                 context.clearRect(0, 0, cvs.width, cvs.height);
+            }
+            if (evt.code === 'KeyA') {
+                const sW = 314;
+                const sH = 303;
+                const fr = 4;
+                let cuFr = 0;
+                let sx = 0;
+                let sy = 0;
+                const sprite = new Image();
+                sprite.src = 'sprite.png';
+                let frC = 0;
+                function updateFrame() {
+                    frC++;
+                    if (frC % 100 === 0) {
+                        cuFr = (cuFr + 1) % fr;
+                    }
+                }
+                function drawS() {
+                    const srcX = cuFr * sW;
+                    context.clearRect(0, 0, width, height);
+                    context.drawImage(sprite, srcX, 0, sW, sH, sx, sy, sW/8, sH/8);
+                }
+
+                drawS();
+                setTimeout(() => {
+                    let data = context.getImageData(0, 0, width, height);
+                    console.log(data);
+                    context.putImageData(modifyAlpha(data), 0, 0);
+                }, 500);
             }
             if (evt.code === 'Enter') {
                 let boundLimitsObj = getMaxBounds(drawingList, true, false);
@@ -107,9 +136,9 @@
                             isOn: data[i] === 255
                         });
                         xPos++;
-                        if (xPos >= 32) {
+                        if (xPos >= width) {
                             yPos++;
-                            xPos %= 32;
+                            xPos %= width;
                         }
                     }
                 }
@@ -142,9 +171,9 @@
                     }
 
                     boundTrackerX++;
-                    if (boundTrackerX >= 32) {
+                    if (boundTrackerX >= width) {
                         boundTrackerY++;
-                        boundTrackerX %= 32;
+                        boundTrackerX %= width;
                     }
                 }
 
@@ -210,9 +239,21 @@
             return {leftBound, rightBound, topBound, bottomBound};
         }
 
+
+        function modifyAlpha(d) {
+            for (let i = 0; i < d.length; ++i) {
+                if (d[i + 3] >= 200 && d[i + 1] >= 200 && d[i + 2] >= 200) {
+                    d[i] = 0;
+                    console.log('resetting')
+                }
+            }
+            return d;
+        }
     })();
 
 
 </script>
 </body>
 </html>
+
+
