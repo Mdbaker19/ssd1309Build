@@ -1,5 +1,5 @@
 """x:0, y:0 is generally bottom right"""
-from time import sleep
+from time import ticks_ms, sleep, ticks_diff
 from machine import Pin, SPI, ADC, I2C
 from xglcd_font import XglcdFont
 from ssd1309 import Display
@@ -7,9 +7,10 @@ from life import Life
 from util import Util
 from eeprom import Eeprom
 from player import Player
+from projectile import Projectile
 import json
 import math
-
+import random
 
 #left -14x22
 #right -15x22
@@ -277,23 +278,66 @@ def parse_save_state(e):
     return player
 
 
+# need a list of snowballs for rendering
+# when one off screen, take out of list
+# when enemy hit, spawn new on at new randome y
+# player can move up and down at fixed x based on btns pushed
+# snowball thrown every 250ms at given rate
 def test_snowball_fight():
     player, enemy, objects = load_sprites()
     snowball = bytearray(objects['snowball'])
     e = bytearray(enemy['sprite'])
     right = bytearray(player['sprite_right'])
+    py = 30
+    px = 111
+    ph = 20
+    pw = 16
+    ey = 30
+    es = 14
+    move_interval = 3
+    snowballs = []
+    max_snow = 10
+    snowball_interval = 500
+    prev_time = ticks_ms()
+    for i in range(180):
+        curr_time = ticks_ms()
+        if ticks_diff(curr_time, prev_time) >= snowball_interval:
+            prev_time = curr_time
+            if len(snowballs) < max_snow:
+                sy = int(py + (ph / 3))
+                new_snow = Projectile(px, sy)
+                snowballs.append(new_snow)
 
+        going_up = b1.value() == 1
+        going_down = b2.value() == 1
 
-    d2.draw_bitmap_array_raw(right, 30, 30, 16, 20)
-    d2.draw_bitmap_array_raw(e, 50, 30, 14, 14)
-    d2.draw_bitmap_array_raw(snowball, 20, 20, 13, 11)
-    d1.present()
-    sleep(10)
+        if going_up:
+            py -= move_interval
+        elif going_down:
+            py += move_interval
 
+        if py >= H - 16:
+            py = H - 16
+        if py <= 0:
+            py = 0
 
-    return
+        d2.draw_bitmap_array_raw(right, px, py, pw, ph)
+        d2.draw_bitmap_array_raw(e, 0, ey, es, es)
+        snowballs = [s for s in snowballs if s.x >= 0]
+        for s in snowballs:
+            s.increment_x(-4)
+            d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
+            # minor optimize check, snowball cant contact if not close enough on x axis
+            if s.x <= 15:
+                if util.check_for_collision(0, ey, es, es, s.x, s.y, 5, 4):
+                    ey = random.randint(0, 49)
+                    print("HIT EM!")
+        d2.present()
+        sleep(.08)
 
+        d2.clear_buffers()
 
+    sleep(1)
     return
 
 
