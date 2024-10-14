@@ -7,15 +7,13 @@ from life import Life
 from util import Util
 from eeprom import Eeprom
 from player import Player
+from enemy import Enemy
 from projectile import Projectile
+from test_code import TestCode
 import json
 import math
 import random
 
-#left -14x22
-#right -15x22
-#front -16x23
-#back -16x21
 
 b1 = Pin(5, Pin.IN, Pin.PULL_UP)
 b2 = Pin(4, Pin.IN, Pin.PULL_UP)
@@ -95,10 +93,8 @@ def load_sprites():
     with open('sprites.json', 'r') as file:
         data = json.load(file)
     player = data['player']
-    # sitting - 15x11
-    # jumping - 12x12
     enemy = data['enemy']
-    objects = data['objects'] # door: 25x11
+    objects = data['objects']
 
     return (player, enemy, objects)
 
@@ -139,26 +135,29 @@ def parse_save_state(e):
 # when enemy hit, spawn new on at new randome y
 # player can move up and down at fixed x based on btns pushed
 # snowball thrown every 250ms at given rate
-def test_snowball_fight(player):
-    test_ui(player)
-    player, enemy, objects = load_sprites()
+def test_snowball_fight(player_data, lvl, sprites):
+    test_ui(player_data)
+    player_values_changed = False
+    player, enemy, objects = sprites
     snowball = bytearray(objects['snowball'])
+
     e = bytearray(enemy['sprite'])
+    enemy = Enemy(lvl, 0, 30, e, 14, 255)
+    e_snow = []
+    e_prev_time = ticks_ms()
+    e_move_prev_time = ticks_ms()
+
     right = bytearray(player['sprite_right'])
     py = 30
     px = 111
     ph = 20
     pw = 16
-    ey = 30
-    es = 14
-    ex = 0
+    player_damage = 2
     move_interval = 3
     snowballs = []
     max_snow = 10
-    snowball_interval = 500
-    enemy_attack_interval = 1000
-    e_snow = []
-    e_prev_time = ticks_ms()
+    snowball_interval = 800
+
     prev_time = ticks_ms()
     for i in range(100):
         curr_time = ticks_ms()
@@ -169,12 +168,15 @@ def test_snowball_fight(player):
                 # projectile class can take in own bytearray to render, but not necessary as they are all snowballs, no need for extra refs
                 new_snow = Projectile(px, sy, random.randint(-9999, 9999))
                 snowballs.append(new_snow)
-        if ticks_diff(curr_time, e_prev_time) >= enemy_attack_interval:
+        if ticks_diff(curr_time, e_prev_time) >= enemy.at_int:
             e_prev_time = curr_time
-            if len(e_snow) < max_snow:
-                sy = int(ey + (es / 3))
-                new_snow = Projectile(ex, sy, random.randint(-9999, 9999))
+            if len(e_snow) < enemy.max_ammo:
+                sy = int(enemy.y + (enemy.size / 3))
+                new_snow = Projectile(enemy.x, sy, random.randint(-9999, 9999))
                 e_snow.append(new_snow)
+        if ticks_diff(curr_time, e_move_prev_time) >= enemy.move_int:
+            e_move_prev_time = curr_time
+            enemy.change_value("y", random.randint(0, H - enemy.size))
 
         going_up = b1.value() == 1
         going_down = b2.value() == 1
@@ -190,17 +192,19 @@ def test_snowball_fight(player):
             py = 0
 
         d2.draw_bitmap_array_raw(right, px, py, pw, ph)
-        d2.draw_bitmap_array_raw(e, 0, ey, es, es)
+        d2.draw_bitmap_array_raw(enemy.ba, enemy.x, enemy.y, enemy.size, enemy.size)
         snowballs = [s for s in snowballs if s.x >= 0]
         e_snow = [s for s in e_snow if s.x <= W]
         for s in snowballs:
             s.increment_x(-4)
             d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
             # minor optimize check, snowball cant contact if not close enough on x axis
-            if s.x <= es:
-                if util.check_for_collision(ex, ey, es, es, s.x, s.y, 5, 4):
-                    ey = random.randint(0, H - es)
-                    print("HIT EM!")
+            if s.x <= enemy.size:
+                if util.check_for_collision(enemy.x, enemy.y, enemy.size, enemy.size, s.x, s.y, 5, 4):
+                    enemy.change_value("hp", -player_damage)
+                    print(f"HIT EM! {enemy.hp} / {enemy.base_hp}")
+                    player_data.change_value("exp", 6)
+                    player_values_changed = True
 
         for s in e_snow:
             s.increment_x(2)
@@ -209,15 +213,62 @@ def test_snowball_fight(player):
             if s.x >= px:
                 if util.check_for_collision(px, py, pw, ph, s.x, s.y, 5, 4):
                     print("Health Loss!!")
-                    # could prob optimize so no list interpilation is done here again like above.., but was taking more than one hit
-                    e_snow = [sn for sn in e_snow if sn.ide != s.ide]
+                    player_data.change_value("hp", -1)
+                    player_values_changed = True
+                    s.increment_x(200)
 
         d2.present()
+        if player_values_changed:
+            d1.clear_buffers()
+            test_ui(player_data)
+            player_values_changed = False
         sleep(.08)
 
         d2.clear_buffers()
+        if enemy.hp <= 0:
+            break
 
     return
+
+# spawn enemies on map
+# when contacted, create a snowball battle with them and render UI above
+#     move above test function to something re usable with enemy level and id passed in
+# remove them from map when killed and decrement counter above door on map
+def test_enemies_present_snowball_kill(player_data):
+    enemies_list = [] # spawn calling enemy class?
+    require_kills = 3 #len(enemies_list) ?
+    battle_running = False
+    player, eba, objects = load_sprites()
+
+    (player_ba, xmove, ymove) = player_data.get_dir_profile(player, b1.value(), b2.value())
+    #(self, lvl, x, y, ba, size, ide)
+    enemy = Enemy(2, 10, 30, eba, 14, 256)
+    door_closed_ba = objects['door_closed']
+
+    ''' Refactor fn to take in enemy instead of lvl and sprites
+
+This will be called when needed, make sure we can run it here
+'''
+    test_snowball_fight(player_data, 2, (player, enemy, objects))
+    # if contacted player and enemy
+    # get enemy data by position and create snowball fight
+    # on victory save player hp (update if level up) and remove enemy from map
+    # required_kills -= 1
+    d2.draw_bitmap_array_raw(player_ba, px, py, pw, ph)
+    d2.draw_bitmap_array_raw(enemy.ba, enemy.x, enemy.y, enemy.size, enemy.size)
+    # for now refactor
+    # create one enemy on map like test_movement
+    # have it check contact for enemy and player
+    # start a snowball fight
+
+
+
+    d1.draw_bitmap_array_raw(door_closed_ba, 50, 50, 25, 11)
+    d1.present()
+    d2.present()
+    sleep(2)
+    return
+
 
 def save_game_data(data):
     eeprom.eeprom_write(data)
@@ -232,12 +283,18 @@ read_value = eeprom.eeprom_read()
 print(f"Read from eeprom: {read_value}")
 
 save_state_player_data = parse_save_state(read_value)
-
-#test_life()
-#test_movement()
+'''
+Needs font, load sprites, draw text...
+test_code = TestCode()
+test_code.test_life()
+test_code.test_movement()
+'''
 #test_ui(save_state_player_data)
 #test_enemy_and_player_render()
-test_snowball_fight(save_state_player_data)
+#test_snowball_fight(save_state_player_data, 1)
+
+
+test_enemies_present_snowball_kill(save_state_player_data)
 
 sleep(2)
 d1.cleanup()
@@ -253,7 +310,7 @@ get collision detection figured out √
 get the UI figured out √
 load different levels
 kill something √
-enemy attack me and health decrement
+enemy attack me √ and health decrement
 create a parse function and list of readable inventory for save state loading
 Load a list of save state data and populate UI elements - player level, inventory √
 
