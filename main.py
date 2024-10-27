@@ -1,4 +1,3 @@
-"""x:0, y:0 is generally bottom right"""
 from time import ticks_ms, sleep, ticks_diff
 from machine import Pin, SPI, ADC, I2C
 from xglcd_font import XglcdFont
@@ -15,114 +14,78 @@ from constants import Constants
 import json
 import math
 import random
+from rpg_util import RPG_Util
+from rpg import RPG, RPG_Player, RPG_Enemy
 
+ab1 = Pin(5, Pin.IN, Pin.PULL_UP)
+ab2 = Pin(4, Pin.IN, Pin.PULL_UP)
+db1 = Pin(6, Pin.IN, Pin.PULL_UP)
+db2 = Pin(7, Pin.IN, Pin.PULL_UP)
+db3 = Pin(8, Pin.IN, Pin.PULL_UP)
+db4 = Pin(9, Pin.IN, Pin.PULL_UP)
 
-b1 = Pin(5, Pin.IN, Pin.PULL_UP)
-b2 = Pin(4, Pin.IN, Pin.PULL_UP)
+quit_b = Pin(15, Pin.IN, Pin.PULL_UP)
 
 i2c_memory = I2C(0, scl=Pin(1), sda=Pin(0), freq=50000)
 
-W = 128
-H = 64
-font_H = 8
-'''Create another font, smaller to show enemy lvl values and required kill counts above doors on map?'''
-font = XglcdFont('Wendy7x8.c', 7, font_H)
+SW = 128
+SH = 64
+FH = 8
+FHS = 4
+
+f8 = XglcdFont('Wendy7x8.c', 7, FH)
+#f3 = XglcdFont('Wendy7x8.c', 4, FHS)
 
 spi = SPI(0, baudrate=10000000, sck=Pin(18), mosi=Pin(19))
 d1 = Display(spi, dc=Pin(16), cs=Pin(17), rst=Pin(20))
-
-
 spi2 = SPI(1, baudrate=10000000, sck=Pin(10), mosi=Pin(11))
 d2 = Display(spi2, dc=Pin(12), cs=Pin(13), rst=Pin(2))
+
+eeprom = Eeprom(0x00, i2c_memory)
+#read_value = eeprom.eeprom_read()
+
+#save_state_player_data = parse_save_state(read_value)
+player = RPG_Player(1)
 util = Util()
+rpg_u = RPG_Util()
+
+rpg_start = RPG()
 
 
-'''
-MOVE TO xglcdFont
-'''
-# when x at 0 is right side of screen == text end position at 0
-# x: 128 is left side of screen
-# does not erase to just draw screen, can overlay an existing bit map
-# can take f strings for text
-''' Need to return total text height especially for next line wrapping'''
-def draw_text(x, y, text, padding=0, isOne=False):
-    text_width = font.measure_text(text)
+def draw_text(x, y, text, padding=0, clear_first=False, isOne=True, isNotSmall=True):
+    text_width = f8.measure_text(text)
+    x = x - padding
+    if x < text_width:
+        x = text_width + padding
+    fh = FH if isNotSmall else FHS
     if isOne:
-        d1.draw_text(text_position_X(x, text_width, padding), y, text, font, False, 180)
+        if clear_first:
+            d1.draw_bitmap_array_raw(bytearray([0] * (128 * FH)), 0, y, 128, fh)
+        d1.draw_text(x, y, text, f8, False, 180)
     else:
-        d2.draw_text(text_position_X(x, text_width, padding), y, text, font, False, 180)
-
-def text_position_X(desiredX, text_w, padding):
-    if desiredX < text_w:
-        return text_w - desiredX + padding
-    else:
-        return desiredX - padding
-'''
-'''
-
-
-def test_ui(player):
-    ui_display(player)
-    d1.present()
+        if clear_first:
+            d2.draw_bitmap_array_raw(bytearray([0] * (128 * FH)), 0, y, 128, fh)
+        d2.draw_text(x, y, text, f8, False, 180)
     return
 
-'''Get all text width to normalize the position they are drawn at?
-Level:    19
-Health:   100
-Items:    []
-(self, lvl, exp, expReq, hp, attack, defense, speed, mana, money)
-'''
-def ui_display(player, isOne=True):
-    ui_rows = 5
-    level = 19
 
-    if isOne:
-        draw_text(128, 52, "Makadee", padding=2, isOne=True)
-        draw_text(128, 43, f"Mana: {player.mana}", padding=2, isOne=True)
-        draw_text(128, 34, f"Health: {player.hp}", padding=2, isOne=True)
-        draw_text(128, 25, f"Level: {player.lvl}", padding=2, isOne=True)
-        draw_text(128, 16, "Items: []", padding=2, isOne=True)
-        draw_text(128, 7, f"Exp: {player.exp}/{player.expReq}", padding=2, isOne=True)
-        d1.draw_rectangle(0, 0, W, H)
-    else:
-        d2.draw_rectangle(0, 0, W, H)
+# (self, lvl, hp, acc, defense, attack=None, mana=None, max_mana=None, choice=None, speed=None)
+def parse_save_state(e):
+#    stats_used_so_far = e[:9]
+    player = RPG_Player(1, 10, 5, 3)
+    return player
 
-
-
-
-def load_sprites():
-    with open('sprites.json', 'r') as file:
-        data = json.load(file)
-    player = data['player']
-    enemy = data['enemy']
-    objects = data['objects']
-
-    return (player, enemy, objects)
-
-
-def test_enemy_and_player_render():
-    player, enemy, objects = load_sprites()
-    door_open = bytearray(objects['door_open'])
-    door = bytearray(objects['door_closed'])
-    grave = bytearray(objects['grave'])
-    e = bytearray(enemy['sprite'])
-    left = bytearray(player['sprite_left'])
-    right = bytearray(player['sprite_right'])
-    front = bytearray(player['sprite_front'])
-    back = bytearray(player['sprite_back'])
-    raw_test = [left, right, front, back]
-
-
-    d2.draw_bitmap_array_raw(front, 30, 30, 16, 20)
-    d2.draw_bitmap_array_raw(e, 50, 30, 14, 14)
-    d2.draw_bitmap_array_raw(grave, 20, 20, 13, 11)
-    d1.draw_bitmap_array_raw(door, 50, 50, 25, 11)
-    d1.draw_bitmap_array_raw(door_open, 50, 10, 25, 11)
+#renders screens and sleeps for 30fps average from time passed in
+def run_screens(passed_time):
     d1.present()
     d2.present()
-    sleep(10)
-
-
+    time_taken = ticks_ms() - passed_time
+    #print(time_taken)
+    sleep_amount = 17 - time_taken #60fps is 16.67ms
+    if sleep_amount >= 0:
+        sleep(sleep_amount / 500)
+    d1.clear_buffers()
+    d2.clear_buffers()
     return
 
 def save_game_data(data):
@@ -130,311 +93,218 @@ def save_game_data(data):
     eeprom.eeprom_write(data)
     return
 
-# (self, lvl, exp, expReq, hp, attack, defense, speed, mana, money): -> e order preserved so all good list unpacking *e
-def parse_save_state(e):
-    stats_used_so_far = e[:9]
-    player = Player(0, 0, *stats_used_so_far)
-    return player
+def ui_display(player, changed_values, first_draw):
+    item_string = ', '.join([f'{key}: {value}' for key, value in player.items.items()])
+    money = int(player.money)
+    clear = not first_draw
+    if first_draw:
+        changed_values = ["name", "hp", "mana", "lvl", "exp", "items", "money"]
+    for value in changed_values:
+        if value == "name":
+            draw_text(128, 48, f"{player.class_type}", padding=2, clear_first=clear, isOne=False)
+        if value == "hp":
+            draw_text(128, 40, f"Health: {player.hp}", padding=2, clear_first=clear, isOne=False)
+        if value == "mana":
+            draw_text(128, 32, f"Mana: {player.mana}/{player.max_mana}", padding=2, clear_first=clear, isOne=False)
+        if value == "lvl":
+            draw_text(128, 24, f"Level: {player.lvl}", padding=2, clear_first=clear, isOne=False)
+        if value == "exp":
+            draw_text(128, 16, f"Exp: {player.exp}/{player.expReq}", padding=2, clear_first=clear, isOne=False)
+        if value == "items":
+            draw_text(128, 8, f"Items: {item_string}", padding=2, clear_first=clear, isOne=False)
+        if value == "money":
+            draw_text(20, 54, f"Bank: {money}", padding=2, clear_first=clear, isOne=False)
 
-
-# need a list of snowballs for rendering
-# when one off screen, take out of list
-# when enemy hit, spawn new on at new randome y
-# player can move up and down at fixed x based on btns pushed
-# snowball thrown every 250ms at given rate
-def test_snowball_fight(player_data, player_profile, enemy, objects):
-    test_ui(player_data)
-    player_values_changed = False
-    snowball = bytearray(objects['snowball'])
-
-    e_snow = []
-    e_prev_time = ticks_ms()
-    e_move_prev_time = ticks_ms()
-
-    py = 30
-    px = 111
-    ph = 20
-    pw = 16
-    player_damage = 2
-    move_interval = 3
-    snowballs = []
-    max_snow = 10
-    snowball_interval = 800
-
-    prev_time = ticks_ms()
-    while enemy.hp >= 0:
-        curr_time = ticks_ms()
-        if ticks_diff(curr_time, prev_time) >= snowball_interval:
-            prev_time = curr_time
-            if len(snowballs) < max_snow:
-                sy = int(py + (ph / 3))
-                # projectile class can take in own bytearray to render, but not necessary as they are all snowballs, no need for extra refs
-                new_snow = Projectile(px, sy, random.randint(-9999, 9999))
-                snowballs.append(new_snow)
-        if ticks_diff(curr_time, e_prev_time) >= enemy.at_int:
-            e_prev_time = curr_time
-            if len(e_snow) < enemy.max_ammo:
-                sy = int(enemy.y + (enemy.size / 3))
-                new_snow = Projectile(enemy.x, sy, random.randint(-9999, 9999))
-                e_snow.append(new_snow)
-        if ticks_diff(curr_time, e_move_prev_time) >= enemy.move_int:
-            e_move_prev_time = curr_time
-            enemy.change_value("y", random.randint(0, H - enemy.size), True)
-
-        going_up = b1.value() == 1
-        going_down = b2.value() == 1
-
-        if going_up:
-            py -= move_interval
-        elif going_down:
-            py += move_interval
-
-        if py >= H - ph:
-            py = H - ph
-        if py <= 0:
-            py = 0
-
-        d2.draw_bitmap_array_raw(player_profile, px, py, pw, ph)
-        d2.draw_bitmap_array_raw(enemy.ba, enemy.x, enemy.y, enemy.size, enemy.size)
-
-
-
-        snowballs = [s for s in snowballs if s.x >= 0]
-        e_snow = [s for s in e_snow if s.x <= W]
-        for s in snowballs:
-            s.increment_x(-4)
-            d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
-            # minor optimize check, snowball cant contact if not close enough on x axis
-            if s.x <= enemy.size:
-                if util.check_for_collision(enemy.x, enemy.y, enemy.size, enemy.size, s.x, s.y, 5, 4):
-                    enemy.change_value("hp", -player_damage)
-                    #print(f"HIT EM! {enemy.hp} / {enemy.base_hp}")
-                    player_data.change_value("exp", 6)
-                    player_values_changed = True
-
-        for s in e_snow:
-            s.increment_x(2)
-            d2.draw_bitmap_array_raw(snowball, s.x, s.y, 5, 4)
-            # minor optimize check, snowball cant contact if not close enough on x axis
-            if s.x >= px:
-                if util.check_for_collision(px, py, pw, ph, s.x, s.y, 5, 4):
-                    player_data.change_value("hp", -1)
-                    player_values_changed = True
-                    s.increment_x(200)
-
-        d2.present()
-        if player_values_changed:
-            d1.clear_buffers()
-            test_ui(player_data)
-            player_values_changed = False
-        sleep(.08)
-
-        d2.clear_buffers()
-
+    d2.draw_rectangle(0, 0, SW, SH)
     return
 
-# spawn enemies on map
-# when contacted, create a snowball battle with them and render UI above
-#     move above test function to something re usable with enemy level and id passed in
-# remove them from map when killed and decrement counter above door on map
-def test_enemies_present_snowball_kill(player):
-    enemies_list = [] # spawn calling enemy class?
-    require_kills = 3 #len(enemies_list) ?
-    battle_running = False
-    player_ba_list, eba, objects = load_sprites()
-
-    eba = bytearray(eba['sprite'])
-
-    #(self, lvl, x, y, ba, size, ide)
-    enemy = Enemy(2, 100, 40, eba, 14, 256)
-    door_closed_ba = bytearray(objects['door_closed'])
-
-    right_side_player = bytearray(player_ba_list['sprite_right'])
-    #test_snowball_fight(player_data, right_side_player, enemy, objects)
-
-    px = 0
-    py = 0
-
-    ph = 20
-    pw = 16
+def ui_display_battle(player, b1C):
+    print(b1C)
+    item_string = ', '.join([f'{key}: {value}' for key, value in player.items.items()])
+    draw_text(128, 50, "Attack", padding=2, isOne=False)
+    draw_text(128, 40, "Shield", padding=2, isOne=False)
+    draw_text(128, 30, f"Magic: {player.mana}/{player.max_mana}", padding=2, isOne=False)
+    draw_text(128, 20, f"Items: {item_string}", padding=2, isOne=False)
+    draw_text(128, 10, "Run", padding=2, isOne=False)
+    d2.draw_rectangle(0, b1C*10 - 2, SW, 12)
+    d2.draw_rectangle(0, 0, SW, SH)
+    return
 
 
 
-    # if contacted player and enemy
-    # get enemy data by position and create snowball fight
-    # on victory save player hp (update if level up) and remove enemy from map
-    # required_kills -= 1
+def run_rpg_battle_ui(player, b1C, ab1v, can_move_cursor):
+    if can_move_cursor:
+        if ab1v == 1:
+            b1C -= 1
+        if b1C < 0:
+            b1C = 5
+        can_move_cursor = False
+    ui_display_battle(player, b1C)
+    return b1C, can_move_cursor
 
-    for i in range(75):
-        b1v = b1.value()
-        b2v = b2.value()
-        profile, px, py, crossed_screens, on_top_screen = player.handle_movement(px, py, ph, pw, player_ba_list, b1v, b2v, starting_on_top_screen=False)
-        d2.draw_sprite(profile, px, py, pw, ph)
-        d2.draw_sprite(enemy.ba, enemy.x, enemy.y, enemy.size, enemy.size)
-        d2.present()
-        if util.check_for_collision(px, py, pw, ph, enemy.x, enemy.y, enemy.size, enemy.size):
-            enemy.x = 0 # maybe move this to a start_fn?
-            test_snowball_fight(player, right_side_player, enemy, objects)
-            px = random.randint(0, Constants.max_x(pw))
-            py = random.randint(0, Constants.max_y(ph))
-            enemy.x = random.randint(0, Constants.max_x(enemy.size))
-            enemy.y = random.randint(0, Constants.max_y(enemy.size))
-
-            '''DO something about restore enemy health and level up'''
-
-        sleep(.20)
-        d1.clear_buffers()
-        d2.clear_buffers()
-        sleep(.05)
-
-    # for now refactor
-    # create one enemy on map like test_movement
-    # have it check contact for enemy and player
-    # start a snowball fight
-
-
-    #d1.clear_buffers()
-    #d2.clear_buffers()
-    d1.draw_bitmap_array_raw(door_closed_ba, 50, 50, 25, 11)
+def rpg_start_screen():
+    screen_ba = rpg_start.load_start_screen()
+    d1.draw_bitmap_array_raw(screen_ba, 0, 0, 117, 54)
     d1.present()
-    d2.present()
-    sleep(5)
     return
 
-def test_arcade_render(ball_count):
-    balls = []
-    reward = 0
-    for i in range(ball_count):
-        balls.append(Ball(128, 128, 64))
-    for ball in balls:
-        if ball.get_dir:
-            ball.x -= 5
+def pick_character_type():
+    choice_made = False
+    cba, fire, daggers, sword = rpg_start.load_obj_sprites()
+    (w, r, k) = rpg_start.psprites
+    ww, wh = rpg_start.wizard_s
+    rw, rh = rpg_start.rouge_s
+    kw, kh = rpg_start.knight_s
+    cx = 70
+    cy = 42
+    choice = None
+    while not choice_made:
+        x, y = util.get_button_dir(db1, db2, db3, db4, 2)
+
+        ab1v = ab1.value()
+        selection_made = ab1v == 1
+
+        if selection_made:
+            if cx < 24:
+                choice = (w, 'w')
+                atk_ba = fire
+            elif cx < 66 and cx > 40:
+                choice = (r, 'r')
+                atk_ba = daggers
+            elif cx < 114 and cx > 80:
+                choice = (k, 'k')
+                atk_ba = sword
+            if not choice is None:
+                choice_made = True
+
+        cx += x
+        cy += y
+
+        cy = Constants.constrained_between(cy, 0, SH-14)
+        cx = Constants.constrained_between(cx, 0, SW-14)
+
+        loop_time = ticks_ms()
+        d1.draw_bitmap_array_raw(w, 6, 0, ww, wh)
+        d1.draw_bitmap_array_raw(r, 0 + ww + 20, 0, rw, rh)
+        d1.draw_bitmap_array_raw(k, 0 + ww + rw + 38, 0, kw, kh)
+        d1.draw_bitmap_array_raw(cba, cx, cy, 14, 14)
+        draw_text(128, 48, "Choose class", padding=4, clear_first=False, isOne=False, isNotSmall=True)
+        draw_text(118, 28, "Knight", padding=4, clear_first=False, isOne=False, isNotSmall=True)
+        draw_text(74, 28, "Rouge", padding=4, clear_first=False, isOne=False, isNotSmall=True)
+        draw_text(38, 28, "Wizard", padding=4, clear_first=False, isOne=False, isNotSmall=True)
+        run_screens(loop_time)
+    return choice, atk_ba
+
+def run_battle_sequence(player, enemy, b1C, can_move_cursor):
+    player_ran = False # does nothing right now
+    ab1v = ab1.value()
+    ab2v = ab2.value() # need to make it the decision button
+    b1C, can_move_cursor = run_rpg_battle_ui(player, b1C, ab1v, can_move_cursor)
+    if ab2v == 1:
+        selections = ['Run', 'Items', 'Magic', 'Shield', 'Attack']
+        print(selections[b1C-1])
+        # how to wait and handle this... while not decision?
+    e_atk_turn = rpg_u.attack_calc(enemy.attack, player.defense, player.speed, enemy.acc, 1.15, 1, enemy.lvl, player.lvl, False, False)
+    player_rare_drops = player.items.get('RD')
+    p_atk_turn = rpg_u.attack_calc(player.attack, enemy.defense, enemy.speed, player.acc, 1.15, 1, player.lvl, enemy.lvl, False, False, player_rare_drops)
+
+    enemy.hp -= p_atk_turn
+    player.hp -= e_atk_turn
+    #print(f"Enemy LVL {enemy.lvl}: {e_atk_turn} and You: {p_atk_turn} HP: E: {enemy.hp} and P: {player.hp}")
+    if player.hp <= 0 or enemy.hp <= 0:
+        print("ENDING BATTLE")
+        return False, b1C
+    return True, b1C
+
+
+def rpg_battle_one(player):
+    battle_start = False
+    start_ms = ticks_ms()
+    bg = rpg_start.load_bg_sprites()
+    first_e_s, first_e_sizes, name = rpg_start.gen_ran_enemy_e()
+    ew, eh = first_e_sizes
+    enemy_one = RPG_Enemy(180, ew, eh, name)
+    b1C = 0
+    can_move_cursor = False
+    ui_shift_delay = 100
+    prev_ui_shift_time = start_ms
+    p_atk_delay = 1000
+    prev_player_atk_int = start_ms
+    while True:
+
+        loop_time = ticks_ms()
+
+        quit_bv = quit_b.value()
+        if quit_bv == 1:
+            print("ending early!")
+            break
+
+        ui_shift_time = loop_time
+        if ticks_diff(ui_shift_time, prev_ui_shift_time) >= ui_shift_delay:
+            prev_ui_shift_time = ui_shift_time
+            can_move_cursor = True
+
+        p_atk_time = loop_time
+        x, y = util.get_button_dir(db1, db2, db3, db4, 5)
+        if x == 0:
+           draw_text(128, 50, "Go on.. walk", padding=0, clear_first=False, isOne=True, isNotSmall=True)
+
+
+        player.x += x
+        player.x = Constants.constrained_between(player.x, 0, SW - player.w)
+
+        if player.x >= 80:
+            player.x = 0
+            battle_start = True
+
+        if battle_start:
+            d1.draw_bitmap_array_raw(bg, 0, 0, SW-1, SH-1)
+            d1.draw_bitmap_array_raw(first_e_s, SW-enemy_one.w, 0, enemy_one.w, enemy_one.h)
+            battle_start, b1C = run_battle_sequence(player, enemy_one, b1C, can_move_cursor)
+            print(enemy_one.hp)
+            for projectile in player.attack_list:
+                d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
+                projectile.x += projectile.shot_speed_mult
+
+            if ticks_diff(p_atk_time, prev_player_atk_int) >= p_atk_delay:
+                prev_player_atk_int = p_atk_time
+                player.attack_list.append(Projectile(player.x, player.y + int(player.h *.4), random.randint(-99999, 99999), player.atk_w, player.atk_h, ba=player.atk_ba, speed=player.speed))
+
         else:
-            ball.x += 5
-        ball.y -= 5
-        if ball.y <= 0:
-            arcade.get_reward_value(ball.x)
-    #d2.present()
-    return reward
+            ui_display(player, [], True)
+            player.attack_list = [p for p in player.attack_list if p.x < SW]
+        d1.draw_bitmap_array_raw(player.choice, player.x, player.y, player.w, player.h)
 
-
-
-def distance(p1, p2):
-    return (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2
-def is_point_in_range(tower, target):
-    dis = distance(tower, target)
-    #print(f"Is {dis} less than {tower.distance}")
-    return dis <= tower.distance
-
-
-# maybe do a half screen partition depending on how i set tower ranges
-# need bullet ba for projectile here
-def test_tower_sets(towers, enemies, objects):
-    ammo_ba = bytearray(objects['tower_ammo'])
-    curr_tower_shoot_time = ticks_ms()
-
-    for i in range(10):
-        # establish tower targets and shoot at them
-        for tower in towers:
-            d2.draw_sprite(tower.ba, tower.x, tower.y, 14, 19)
-            tower_shoot_time = ticks_ms()
-            if ticks_diff(tower_shoot_time, curr_tower_shoot_time) >= tower.shoot_time:
-                tower_shoot_time = curr_tower_shoot_time
-                for enemy in enemies:
-                    d2.draw_sprite(enemy.ba, enemy.x, enemy.y, enemy.size, enemy.size)
-                    if is_point_in_range(tower, enemy):
-                        print(f"tower at {tower.x} / {tower.y} has a target at {enemy.x} / {enemy.y}")
-                        tower.update_attr('target', enemy.ide, True)
-                        tower.projectiles.append(Projectile(tower.x, tower.y, random.randint(-9999, 9999), 2, 2, ba=ammo_ba, path=util.get_slope_path(tower, enemy)))
-
-            # handle projectile movement
-            e = [e for e in enemies if e.ide == tower.target]
-            projectiles = [p for p in tower.projectiles if p.x <= 130]
-            tower.update_attr('projectiles', projectiles) # not sure if needed
-            for projectile in projectiles:
-                (x_path, y_path) = projectile.path
-                print(x_path, y_path) # slope calc is f'd, may need slope path accumulator stored in projectile as property
-                projectile.increment_x(-x_path)
-                projectile.increment_y(-y_path)
-                d2.draw_bitmap_array_raw(projectile.ba, int(projectile.x), int(projectile.y), projectile.w, projectile.h)
-
-            # seems to need big hitbox.. which is fine honestly
-                for en in e:
-                    if en and util.check_for_collision(en.x, en.y, en.size, en.size, projectile.x, projectile.y, projectile.w, projectile.h, hit_box_mult=5):
-                        en.change_value('hp', -tower.damage)
-                        projectile.increment_x(200)
-
-        d2.present()
-        sleep(1)
-        d2.clear_buffers()
+        run_screens(loop_time)
     return
 
-'''
-This returns a list of len 255 of ints ranging from 0-255 themselves
-255 should be ignored as that is considered empty space
-'''
-eeprom = Eeprom(0x00, i2c_memory)
-#read_value = eeprom.eeprom_read()
-#print(f"Read from eeprom: {read_value}")
 
-#save_state_player_data = parse_save_state(read_value)
+rpg_start_screen()
+sleep(1)
+d1.clear_buffers()
+rpg_choice, atk_ba = pick_character_type()
+choice, letter = rpg_choice
 
-# testing, dont need to keep reading
-save_state_player_data = Player(0, 0, 1, 0, 100, 20, 2, 2, 2, 10, 99)
-# (self, lvl, exp, expReq, hp, attack, defense, speed, mana, money): -> e order preserved so all good list unpacking *e
-'''
-Needs font, load sprites, draw text...
-test_code = TestCode()
-test_code.test_life()
-test_code.test_movement()
-'''
-#test_ui(save_state_player_data)
-#test_enemy_and_player_render()
-
-
-# TODO: need to figure out what to do after enemy is killed first time
-#test_enemies_present_snowball_kill(save_state_player_data)
-
-
-
-#_, x, y, distance, damage, projectiles, shoot_time, ba, target=None
-_, eba, objects = load_sprites()
-enemy_sprite = bytearray(eba['sprite'])
-tower_sprite = bytearray(objects['tower_defense_1'])
-t1 = Tower(1, 40, 10050, 1, [], 1000, tower_sprite)
-t2 = Tower(38, 30, 10050, 1, [], 1500, tower_sprite)
-t3 = Tower(108, 36, 1500, 1, [], 1850, tower_sprite) # tower shoot time not applying
-my_towers = [t1, t2, t3]
-
-#_, lvl, x, y, ba, size, ide
-enemy_targets = [
-    Enemy(1, 22, 12, enemy_sprite, 14, random.randint(-9999, 9999)),
-    Enemy(2, 90, 12, enemy_sprite, 14, random.randint(-9999, 9999))
-]
-test_tower_sets(my_towers, enemy_targets, objects)
-
-sleep(2)
+d2.clear_buffers()
+player.be_born(choice, letter, atk_ba)
+d1.clear_buffers()
+draw_text(128, 28, 'Hello There, let us begin', padding=0)
+d1.present()
+d2.present()
+sleep(1)
+d1.clear_buffers()
+rpg_battle_one(player)
+sleep(.5)
 d1.cleanup()
 d2.cleanup()
 
 
 print('Done.')
 
-
-'''
-Fix shooting interval for towers as it floods bullets
-&& do something with slope accumulator to handle fractional path to target
-
-
-get collision detection figured out √
-get the UI figured out √
-load different levels
-kill something √
-enemy attack me √ and health decrement √
-create a parse function and list of readable inventory for save state loading
-Load a list of save state data and populate UI elements - player level, inventory √
-
-
 '''
 
+battle victory and loot, next battle
+show atk ba
+print what decision ab2v makes when clicked based on b1C position
+'''
 

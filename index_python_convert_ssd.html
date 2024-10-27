@@ -37,8 +37,8 @@
 
 
         // eventually this sizing wont matter
-        const width = 14;
-        const height = 20;
+        const width = 128;
+        const height = 64;
         const cvs = document.getElementById("canvas");
         const output = document.getElementById("output");
         const sizeOutput = document.getElementById("sizeOutput");
@@ -186,8 +186,8 @@
                 let constrainedPiece = constrainedBitMap[constrainedBitMap.length - 1];
                 constrainedBitMap[constrainedBitMap.length - 1] = constrainedPiece.split(',')[0];
 
-                constrainedBitMap.unshift('([');
-                constrainedBitMap.push('])');
+                constrainedBitMap.unshift('[');
+                constrainedBitMap.push(']');
 
                 // filtered one will be get the bounding limits to start
                 // count that many points of bitmap starting with a 255 sighting ? what about I object shape?
