@@ -24,6 +24,7 @@ db2 = Pin(7, Pin.IN, Pin.PULL_UP)
 db3 = Pin(8, Pin.IN, Pin.PULL_UP)
 db4 = Pin(9, Pin.IN, Pin.PULL_UP)
 
+
 quit_b = Pin(15, Pin.IN, Pin.PULL_UP)
 
 i2c_memory = I2C(0, scl=Pin(1), sda=Pin(0), freq=50000)
@@ -51,6 +52,18 @@ rpg_u = RPG_Util()
 
 rpg_start = RPG()
 
+state_waiting = 'waiting' # render while i am cycling b1C to take an action
+state_process = 'process' # handle my attack / defense / magic / run / item
+state_update = 'update' # run the above logic and output result
+state_end_turn = 'end_turn' # i did something, enemy take turn then waiting for me
+
+
+# pre load bg ba?
+fight_door, shop_door, shop_keep = rpg_start.load_entrences()
+bg_top = rpg_start.load_bg_sprites()
+
+def pressed(b):
+    return b.value() == 0
 
 def draw_text(x, y, text, padding=0, clear_first=False, isOne=True, isNotSmall=True):
     text_width = f8.measure_text(text)
@@ -76,16 +89,19 @@ def parse_save_state(e):
     return player
 
 #renders screens and sleeps for 30fps average from time passed in
-def run_screens(passed_time):
+def run_screens(passed_time, clear_one=True, clear_two=True):
     d1.present()
     d2.present()
     time_taken = ticks_ms() - passed_time
     #print(time_taken)
     sleep_amount = 17 - time_taken #60fps is 16.67ms
     if sleep_amount >= 0:
+        print("Sleeping for: ", sleep_amount/500)
         sleep(sleep_amount / 500)
-    d1.clear_buffers()
-    d2.clear_buffers()
+    if clear_one:
+        d1.clear_buffers()
+    if clear_two:
+        d2.clear_buffers()
     return
 
 def save_game_data(data):
@@ -93,15 +109,19 @@ def save_game_data(data):
     eeprom.eeprom_write(data)
     return
 
-def ui_display(player, changed_values, first_draw):
+def ui_display(player, changed_values, first_draw, in_overworld=False):
     item_string = ', '.join([f'{key}: {value}' for key, value in player.items.items()])
-    money = int(player.money)
+    money_val = int(player.money)
+    if money_val >= 1000:
+        money_val = f"{money_val / 1000:.2f}K"
+    elif money_val >= 1000000:
+        money_val = f"{money_val / 1000000:.2f}M"
     clear = not first_draw
     if first_draw:
         changed_values = ["name", "hp", "mana", "lvl", "exp", "items", "money"]
     for value in changed_values:
         if value == "name":
-            draw_text(128, 48, f"{player.class_type}", padding=2, clear_first=clear, isOne=False)
+            draw_text(128, 48, f"{player.class_type} . A:{player.attack}/D:{player.defense}", padding=2, clear_first=clear, isOne=False)
         if value == "hp":
             draw_text(128, 40, f"Health: {player.hp}", padding=2, clear_first=clear, isOne=False)
         if value == "mana":
@@ -113,28 +133,44 @@ def ui_display(player, changed_values, first_draw):
         if value == "items":
             draw_text(128, 8, f"Items: {item_string}", padding=2, clear_first=clear, isOne=False)
         if value == "money":
-            draw_text(20, 54, f"Bank: {money}", padding=2, clear_first=clear, isOne=False)
+            draw_text(20, 20, f"Bank: {money_val}", padding=2, clear_first=clear, isOne=False)
 
+    if in_overworld:
+        draw_text(0, 55, "Enter ->", padding=2, isOne=False)
     d2.draw_rectangle(0, 0, SW, SH)
     return
 
 def ui_display_battle(player, b1C):
-    print(b1C)
+    b1CY = max(b1C, 1)
     item_string = ', '.join([f'{key}: {value}' for key, value in player.items.items()])
     draw_text(128, 50, "Attack", padding=2, isOne=False)
+    draw_text(0, 44, "up/down", padding=2, isOne=False)
     draw_text(128, 40, "Shield", padding=2, isOne=False)
     draw_text(128, 30, f"Magic: {player.mana}/{player.max_mana}", padding=2, isOne=False)
     draw_text(128, 20, f"Items: {item_string}", padding=2, isOne=False)
     draw_text(128, 10, "Run", padding=2, isOne=False)
-    d2.draw_rectangle(0, b1C*10 - 2, SW, 12)
+    draw_text(0, 10, "Select ->", padding=2, isOne=False)
+    draw_text(128, 0, f"HP: {player.hp}", padding=2, isOne=False)
+    d2.draw_rectangle(0, b1CY*10 - 2, SW, 12)
     d2.draw_rectangle(0, 0, SW, SH)
     return
 
-
+def ui_shop(money, b1C):
+    b1CY = max(b1C, 1)
+    draw_text(128, 50, "Potion: 10", padding=2, isOne=False)
+    draw_text(0, 44, "up/down", padding=2, isOne=False)
+    draw_text(128, 40, "DEF Book: 20", padding=2, isOne=False)
+    draw_text(128, 30, "ATK Book: 20", padding=2, isOne=False)
+    draw_text(128, 20, "SPEED Book: 20", padding=2, isOne=False)
+    draw_text(128, 10, "ACC Book: 20", padding=2, isOne=False)
+    draw_text(0, 10, "Select ->", padding=2, isOne=False)
+    d2.draw_rectangle(0, b1CY*10 - 2, SW, 12)
+    d2.draw_rectangle(0, 0, SW, SH)
+    return
 
 def run_rpg_battle_ui(player, b1C, ab1v, can_move_cursor):
     if can_move_cursor:
-        if ab1v == 1:
+        if ab1v == 0:
             b1C -= 1
         if b1C < 0:
             b1C = 5
@@ -159,10 +195,12 @@ def pick_character_type():
     cy = 42
     choice = None
     while not choice_made:
+        loop_time = ticks_ms()
+
         x, y = util.get_button_dir(db1, db2, db3, db4, 2)
 
         ab1v = ab1.value()
-        selection_made = ab1v == 1
+        selection_made = ab1v == 0
 
         if selection_made:
             if cx < 24:
@@ -183,7 +221,6 @@ def pick_character_type():
         cy = Constants.constrained_between(cy, 0, SH-14)
         cx = Constants.constrained_between(cx, 0, SW-14)
 
-        loop_time = ticks_ms()
         d1.draw_bitmap_array_raw(w, 6, 0, ww, wh)
         d1.draw_bitmap_array_raw(r, 0 + ww + 20, 0, rw, rh)
         d1.draw_bitmap_array_raw(k, 0 + ww + rw + 38, 0, kw, kh)
@@ -199,112 +236,278 @@ def run_battle_sequence(player, enemy, b1C, can_move_cursor):
     player_ran = False # does nothing right now
     ab1v = ab1.value()
     ab2v = ab2.value() # need to make it the decision button
-    b1C, can_move_cursor = run_rpg_battle_ui(player, b1C, ab1v, can_move_cursor)
-    if ab2v == 1:
-        selections = ['Run', 'Items', 'Magic', 'Shield', 'Attack']
-        print(selections[b1C-1])
-        # how to wait and handle this... while not decision?
+    p_selection = None
+    if ab2v == 0:
+        selection = check_input(b1C, can_move_cursor, player, ab1v)
+        p_selection = handle_turns(selection)
     e_atk_turn = rpg_u.attack_calc(enemy.attack, player.defense, player.speed, enemy.acc, 1.15, 1, enemy.lvl, player.lvl, False, False)
     player_rare_drops = player.items.get('RD')
+
     p_atk_turn = rpg_u.attack_calc(player.attack, enemy.defense, enemy.speed, player.acc, 1.15, 1, player.lvl, enemy.lvl, False, False, player_rare_drops)
 
     enemy.hp -= p_atk_turn
     player.hp -= e_atk_turn
-    #print(f"Enemy LVL {enemy.lvl}: {e_atk_turn} and You: {p_atk_turn} HP: E: {enemy.hp} and P: {player.hp}")
-    if player.hp <= 0 or enemy.hp <= 0:
-        print("ENDING BATTLE")
-        return False, b1C
-    return True, b1C
 
 
-def rpg_battle_one(player):
-    battle_start = False
-    start_ms = ticks_ms()
-    bg = rpg_start.load_bg_sprites()
-    first_e_s, first_e_sizes, name = rpg_start.gen_ran_enemy_e()
-    ew, eh = first_e_sizes
-    enemy_one = RPG_Enemy(180, ew, eh, name)
-    b1C = 0
-    can_move_cursor = False
-    ui_shift_delay = 100
-    prev_ui_shift_time = start_ms
-    p_atk_delay = 1000
-    prev_player_atk_int = start_ms
+    if enemy.hp <= 0:
+        print("ENDING BATTLE E dead")
+        return True, False, b1C
+    if player.hp <= 0:
+        print("ENDING BATTLE P dead")
+        return False, True, b1C
+    return False, False, b1C
+
+
+# is everything really needed here along with b1C? or can i clean and trim up
+def check_input(b1C, can_move_cursor, player, ab1v):
+    b1C, can_move_cursor = run_rpg_battle_ui(player, b1C, ab1v, can_move_cursor)
+    selections = ['Run', 'Items', 'Magic', 'Shield', 'Attack']
+    selection = None
+    if ab2v == 0:
+        selection = selections[b1C-1]
+    return selection
+
+
+def is_in(v1, v2, value):
+    return value >= v1 and value <= v2
+
+def rpg_world(player):
+    show_fight_door = True
+    d_sx = 18 # door start x and below end x
+    sd_ex = 76
+    fd_ex = 85
+    d_values = [fd_ex, sd_ex]
+    d_check_value = 0
+    ui_display(player, [], True, True)
+    door_words = ["Shop", "Fight"]
     while True:
-
         loop_time = ticks_ms()
 
         quit_bv = quit_b.value()
-        if quit_bv == 1:
+        if quit_bv == 0:
             print("ending early!")
             break
 
-        ui_shift_time = loop_time
-        if ticks_diff(ui_shift_time, prev_ui_shift_time) >= ui_shift_delay:
-            prev_ui_shift_time = ui_shift_time
-            can_move_cursor = True
-
-        p_atk_time = loop_time
         x, y = util.get_button_dir(db1, db2, db3, db4, 5)
-        if x == 0:
-           draw_text(128, 50, "Go on.. walk", padding=0, clear_first=False, isOne=True, isNotSmall=True)
-
-
         player.x += x
+        if player.x >= 95:
+            show_fight_door = not show_fight_door
+            player.x = 0
+            d_check_value += 1
+            d_check_value %= 2
+
         player.x = Constants.constrained_between(player.x, 0, SW - player.w)
 
-        if player.x >= 80:
-            player.x = 0
-            battle_start = True
-
-        if battle_start:
-            d1.draw_bitmap_array_raw(bg, 0, 0, SW-1, SH-1)
-            d1.draw_bitmap_array_raw(first_e_s, SW-enemy_one.w, 0, enemy_one.w, enemy_one.h)
-            battle_start, b1C = run_battle_sequence(player, enemy_one, b1C, can_move_cursor)
-            print(enemy_one.hp)
-            for projectile in player.attack_list:
-                d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
-                projectile.x += projectile.shot_speed_mult
-
-            if ticks_diff(p_atk_time, prev_player_atk_int) >= p_atk_delay:
-                prev_player_atk_int = p_atk_time
-                player.attack_list.append(Projectile(player.x, player.y + int(player.h *.4), random.randint(-99999, 99999), player.atk_w, player.atk_h, ba=player.atk_ba, speed=player.speed))
-
+        if show_fight_door:
+            d1.draw_bitmap_array_raw(fight_door, d_sx, 0, 67, 51)
         else:
-            ui_display(player, [], True)
-            player.attack_list = [p for p in player.attack_list if p.x < SW]
-        d1.draw_bitmap_array_raw(player.choice, player.x, player.y, player.w, player.h)
+            d1.draw_bitmap_array_raw(shop_door, d_sx, 0, 58, 54)
 
-        run_screens(loop_time)
+        draw_text(128, 50, f"<- {door_words[d_check_value]}", padding=2, isOne=True)
+
+        d1.draw_bitmap_array_raw(player.choice, player.x, 0, player.w, player.h)
+        if ab2.value() == 0:
+            if is_in(d_sx, d_values[d_check_value], player.x):
+                if show_fight_door:
+                    print("launching battle")
+                    return "Battle"
+                else:
+                    print("Go to store")
+                    return "Store"
+
+        # Not good for later im sure, need to preserve d2 UI... save time
+        run_screens(loop_time, True, False)
     return
 
 
-rpg_start_screen()
-sleep(1)
-d1.clear_buffers()
+def rpg_battle_test(player, enemy_level):
+    b1C = 0
+    selections = ['Run', 'Items', 'Magic', 'Shield', 'Attack']
+    selection = None
+
+    e_ba = None
+    e_sizes = None
+    name = None
+    e_has_attacked = False
+    eatkbaw = 9
+    eatkbah = 10
+
+    if enemy_level % 3 == 0:
+        e_ba, e_sizes, name, e_atk_ba = rpg_start.gen_ran_enemy_h() #atk ba is 13x10
+        eatkbaw = 13
+    else:
+        e_ba, e_sizes, name, e_atk_ba = rpg_start.gen_ran_enemy_e() #atk ba is 9x10
+
+    e_projectiles = []
+
+    ew, eh = e_sizes
+    e_atk_move = 5
+    ex = SW-ew-e_atk_move-2 # little room for not off screen
+    current_enemy = RPG_Enemy(enemy_level, ew, eh, name)
+    # p_waiting, attack_made, enemy_attack_made, end? exit : go again
+    battle_state = 1
+
+    p_atk_miss = False
+
+    while True:
+        if pressed(quit_b):
+            print("ending early!")
+            break
+        lt = ticks_ms()
+
+        x, _ = util.get_button_dir(db1, db2, db3, db4, 3)
+        player.x += x
+        player.x = Constants.constrained_between(player.x, 0, SW - player.w - (ew - 3)) # cant walk on enemy
+
+
+        '''Waiting for player input'''
+        if battle_state == 1:
+            if pressed(ab2):
+                b1C += 1
+                b1C %= 6
+
+            if pressed(ab1):
+                selection = selections[b1C-1]
+                battle_state += 1
+
+        ''''''
+
+        '''Handle Player Turn'''
+        # for now to wait till bad ass art attack is done showing
+        if len(e_projectiles) == 0:
+            if battle_state == 2:
+                p_atk_miss = False
+                if selection == 'Attack':
+                    player.attack_list.append(Projectile(player.x, player.y + int(player.h *.4), random.randint(-99999, 99999), player.atk_w, player.atk_h, ba=player.atk_ba, speed=player.speed))
+                    p_atk_turn = rpg_u.attack_calc(player.attack, current_enemy.defense, current_enemy.speed, player.acc, 1.15, 1, player.lvl, current_enemy.lvl, False, False, True, player.items)
+                    print(f"Player Atk made: {p_atk_turn}")
+                    if p_atk_turn <= 0:
+                        p_atk_miss = True
+                    battle_state += 1
+                    current_enemy.hp -= p_atk_turn
+                    print(f"E health left: {current_enemy.hp}")
+        ''''''
+
+        # for now to wait till bad ass art attack is done showing
+        if len(player.attack_list) == 0:
+            '''Handle E Turn'''
+            if battle_state == 3:
+                battle_state = 4
+                if current_enemy.hp >= 0:
+                    e_has_attacked = True
+                    e_projectiles.append(Projectile(SW, int(SH-eh), random.randint(-99999, 99999), eatkbaw, eatkbah, ba=e_atk_ba, speed=int(max(current_enemy.speed, 5))))
+                    ex -= e_atk_move
+                    e_atk_turn = rpg_u.attack_calc(current_enemy.attack, player.defense, player.speed, current_enemy.acc, 1.15, 1, current_enemy.lvl, player.lvl, False, False, False)
+                    print(f"Enemy Atk made: {e_atk_turn}")
+                    player.hp -= e_atk_turn
+                    print(f"P health left: {player.hp}")
+                else:
+                    print("You win! looting")
+                    loot = current_enemy.loot_table()
+                    player.loot_victory(loot, current_enemy.lvl)
+            ''''''
+
+            '''Handle If Death'''
+            if battle_state == 4:
+                if player.hp <= 0 or current_enemy.hp <= 0:
+                    print("Done!")
+                    battle_state = 0
+                else:
+                    battle_state = 1
+            ''''''
+
+        ui_display_battle(player, b1C)
+        d1.draw_bitmap_array_raw(bg_top, 0, 0, 128, 14)
+        d1.draw_bitmap_array_raw(e_ba, ex, 0, ew, eh)
+        if e_has_attacked:
+            e_has_attacked = False
+            ex += e_atk_move
+        if p_atk_miss:
+            draw_text(SW, 50, "Miss!", padding=2, isOne=True)
+        else:
+            draw_text(SW, 50, f"{current_enemy.hp:.2f}", padding=2, isOne=True)
+        d1.draw_bitmap_array_raw(player.choice, player.x, player.y, player.w, player.h)
+
+        player.attack_list = [p for p in player.attack_list if p.x < SW]
+        for projectile in player.attack_list:
+            d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
+            projectile.x += projectile.shot_speed_mult
+
+        e_projectiles = [p for p in e_projectiles if p.x > 0]
+        for projectile in e_projectiles:
+            d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
+            projectile.x -= projectile.shot_speed_mult
+
+        run_screens(lt)
+
+        if battle_state == 0:
+            break
+    return
+
+def rpg_shop_test(money):
+    print("Shop WIP")
+    b1C = 0
+    selection = None
+    selections = ["Acc", "Speed", "Atk", "Def", "Potion"]
+    shop_k_y = 0
+    shop_k_x = 30
+    while True:
+        if pressed(quit_b):
+            print("ending early!")
+            break
+        lt = ticks_ms()
+        if pressed(ab2):
+            b1C += 1
+            b1C %= 5
+        ui_shop(money, b1C+1) # re use so need to add 1?
+        print(f"B1C: {b1C}")
+        if pressed(ab1):
+            selection = selections[b1C]
+        if selection != None:
+            cost = 20
+            if selection == "Potion":
+                cost = 10
+            print("Buying : ", selection)
+            print(f"You have {money} and cost is {cost}")
+            selection = None
+        d1.draw_bitmap_array_raw(shop_keep, shop_k_x, shop_k_y, 63, 47)
+        draw_text(max(shop_k_x + 63, SW), max(shop_k_y - 5, 0), "please buy.. im hungry", padding=2, isOne=True)
+        shop_k_y += random.randint(-2, 2)
+        shop_k_x += random.randint(-2, 2)
+        shop_k_x = Constants.constrained_between(shop_k_x, 0, SW - 63)
+        shop_k_y = Constants.constrained_between(shop_k_y, 0, SH - 47)
+        run_screens(lt)
+    return
+
+def run_the_sequence():
+    enemy_level = 1
+    while True:
+        if pressed(quit_b):
+            print("ending early!")
+            break
+        choice = rpg_world(player)
+        sleep(.5)
+        if choice == "Battle":
+            rpg_battle_test(player, enemy_level)
+            enemy_level += 1
+        else:
+            rpg_shop_test(player.money)
+        print("Enemy level up: ", enemy_level)
+    return
+
+
 rpg_choice, atk_ba = pick_character_type()
 choice, letter = rpg_choice
 
 d2.clear_buffers()
 player.be_born(choice, letter, atk_ba)
 d1.clear_buffers()
-draw_text(128, 28, 'Hello There, let us begin', padding=0)
-d1.present()
-d2.present()
-sleep(1)
-d1.clear_buffers()
-rpg_battle_one(player)
 sleep(.5)
+run_the_sequence()
 d1.cleanup()
 d2.cleanup()
 
 
 print('Done.')
 
-'''
-
-battle victory and loot, next battle
-show atk ba
-print what decision ab2v makes when clicked based on b1C position
-'''
 
