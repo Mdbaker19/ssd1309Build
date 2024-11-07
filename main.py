@@ -19,9 +19,9 @@ from rpg import RPG, RPG_Player, RPG_Enemy
 
 ab1 = Pin(5, Pin.IN, Pin.PULL_UP)
 ab2 = Pin(4, Pin.IN, Pin.PULL_UP)
-db1 = Pin(6, Pin.IN, Pin.PULL_UP)
+db1 = Pin(6, Pin.IN, Pin.PULL_UP) # make this new menu cycle button (up)
 db2 = Pin(7, Pin.IN, Pin.PULL_UP)
-db3 = Pin(8, Pin.IN, Pin.PULL_UP)
+db3 = Pin(8, Pin.IN, Pin.PULL_UP) # make this new menu cycle button (down)
 db4 = Pin(9, Pin.IN, Pin.PULL_UP)
 
 
@@ -60,6 +60,7 @@ state_end_turn = 'end_turn' # i did something, enemy take turn then waiting for 
 
 # pre load bg ba?
 fight_door, shop_door, shop_keep = rpg_start.load_entrences()
+bank_door, bank_bg = rpg_start.load_entrences_two()
 bg_top = rpg_start.load_bg_sprites()
 
 def pressed(b):
@@ -144,7 +145,6 @@ def ui_display_battle(player, b1C):
     b1CY = max(b1C, 1)
     item_string = ', '.join([f'{key}: {value}' for key, value in player.items.items()])
     draw_text(128, 50, "Attack", padding=2, isOne=False)
-    draw_text(0, 44, "up/down", padding=2, isOne=False)
     draw_text(128, 40, "Shield", padding=2, isOne=False)
     draw_text(128, 30, f"Magic: {player.mana}/{player.max_mana}", padding=2, isOne=False)
     draw_text(128, 20, f"Items: {item_string}", padding=2, isOne=False)
@@ -158,11 +158,26 @@ def ui_display_battle(player, b1C):
 def ui_shop(money, b1C):
     b1CY = max(b1C, 1)
     draw_text(128, 50, "Potion: 10", padding=2, isOne=False)
-    draw_text(0, 44, "up/down", padding=2, isOne=False)
     draw_text(128, 40, "DEF Book: 20", padding=2, isOne=False)
     draw_text(128, 30, "ATK Book: 20", padding=2, isOne=False)
     draw_text(128, 20, "SPEED Book: 20", padding=2, isOne=False)
     draw_text(128, 10, "ACC Book: 20", padding=2, isOne=False)
+    draw_text(0, 10, "Select ->", padding=2, isOne=False)
+    draw_text(0, 44, "Leave ->", padding=2, isOne=False)
+    d2.draw_rectangle(0, b1CY*10 - 2, SW, 12)
+    d2.draw_rectangle(0, 0, SW, SH)
+    return
+
+def ui_bank(money, rate, lvl, b1C):
+    b1CY = max(b1C, 1)
+    cost = 10 * lvl
+    lvl = 2
+    rate = rate % 100 #until it is over 100..
+    draw_text(128, 50, f"Interest Rate: {rate}", padding=2, isOne=False)
+    draw_text(128, 40, f"Bank Lvl: {lvl}", padding=2, isOne=False)
+    draw_text(128, 30, f"Upgrade: {cost}", padding=2, isOne=False)
+    draw_text(128, 20, "Withdrawl", padding=2, isOne=False)
+    draw_text(128, 10, "Deposit", padding=2, isOne=False)
     draw_text(0, 10, "Select ->", padding=2, isOne=False)
     d2.draw_rectangle(0, b1CY*10 - 2, SW, 12)
     d2.draw_rectangle(0, 0, SW, SH)
@@ -196,9 +211,11 @@ def pick_character_type():
     choice = None
     while not choice_made:
         loop_time = ticks_ms()
+        if pressed(quit_b):
+            print("ending early!")
+            break
 
         x, y = util.get_button_dir(db1, db2, db3, db4, 2)
-
         ab1v = ab1.value()
         selection_made = ab1v == 0
 
@@ -229,33 +246,9 @@ def pick_character_type():
         draw_text(118, 28, "Knight", padding=4, clear_first=False, isOne=False, isNotSmall=True)
         draw_text(74, 28, "Rouge", padding=4, clear_first=False, isOne=False, isNotSmall=True)
         draw_text(38, 28, "Wizard", padding=4, clear_first=False, isOne=False, isNotSmall=True)
+        draw_text(0, 10, "-->", padding=2, isOne=False)
         run_screens(loop_time)
     return choice, atk_ba
-
-def run_battle_sequence(player, enemy, b1C, can_move_cursor):
-    player_ran = False # does nothing right now
-    ab1v = ab1.value()
-    ab2v = ab2.value() # need to make it the decision button
-    p_selection = None
-    if ab2v == 0:
-        selection = check_input(b1C, can_move_cursor, player, ab1v)
-        p_selection = handle_turns(selection)
-    e_atk_turn = rpg_u.attack_calc(enemy.attack, player.defense, player.speed, enemy.acc, 1.15, 1, enemy.lvl, player.lvl, False, False)
-    player_rare_drops = player.items.get('RD')
-
-    p_atk_turn = rpg_u.attack_calc(player.attack, enemy.defense, enemy.speed, player.acc, 1.15, 1, player.lvl, enemy.lvl, False, False, player_rare_drops)
-
-    enemy.hp -= p_atk_turn
-    player.hp -= e_atk_turn
-
-
-    if enemy.hp <= 0:
-        print("ENDING BATTLE E dead")
-        return True, False, b1C
-    if player.hp <= 0:
-        print("ENDING BATTLE P dead")
-        return False, True, b1C
-    return False, False, b1C
 
 
 # is everything really needed here along with b1C? or can i clean and trim up
@@ -273,47 +266,52 @@ def is_in(v1, v2, value):
 
 def rpg_world(player):
     show_fight_door = True
-    d_sx = 18 # door start x and below end x
+    d_sx = 18 # door start x and below end x's
     sd_ex = 76
     fd_ex = 85
-    d_values = [fd_ex, sd_ex]
+    bd_ex = 69
+    d_values = [fd_ex, sd_ex, bd_ex]
     d_check_value = 0
     ui_display(player, [], True, True)
-    door_words = ["Shop", "Fight"]
+    door_words = ["Fight", "Store", "Bank"]
+    curr_door = door_words[d_check_value]
     while True:
         loop_time = ticks_ms()
 
-        quit_bv = quit_b.value()
-        if quit_bv == 0:
+        if pressed(quit_b):
             print("ending early!")
             break
 
         x, y = util.get_button_dir(db1, db2, db3, db4, 5)
         player.x += x
         if player.x >= 95:
-            show_fight_door = not show_fight_door
             player.x = 0
             d_check_value += 1
-            d_check_value %= 2
-
+            d_check_value %= 3
+            curr_door = door_words[d_check_value]
         player.x = Constants.constrained_between(player.x, 0, SW - player.w)
 
-        if show_fight_door:
+        if curr_door == "Fight":
             d1.draw_bitmap_array_raw(fight_door, d_sx, 0, 67, 51)
-        else:
+        elif curr_door == "Store":
             d1.draw_bitmap_array_raw(shop_door, d_sx, 0, 58, 54)
-
-        draw_text(128, 50, f"<- {door_words[d_check_value]}", padding=2, isOne=True)
+        elif curr_door == "Bank":
+            d1.draw_bitmap_array_raw(bank_door, d_sx, 0, 51, 63)
+        next_door = door_words[(d_check_value + 1) % 3]
+        draw_text(128, 50, f"<- {next_door}", padding=2, isOne=True)
 
         d1.draw_bitmap_array_raw(player.choice, player.x, 0, player.w, player.h)
-        if ab2.value() == 0:
+        if pressed(ab2):
             if is_in(d_sx, d_values[d_check_value], player.x):
-                if show_fight_door:
+                if curr_door == "Fight":
                     print("launching battle")
                     return "Battle"
-                else:
+                elif curr_door == "Store":
                     print("Go to store")
                     return "Store"
+                elif curr_door == "Bank":
+                    print("Go to bank")
+                    return "Bank"
 
         # Not good for later im sure, need to preserve d2 UI... save time
         run_screens(loop_time, True, False)
@@ -362,9 +360,12 @@ def rpg_battle_test(player, enemy_level):
 
         '''Waiting for player input'''
         if battle_state == 1:
-            if pressed(ab2):
+            if pressed(db1):
                 b1C += 1
                 b1C %= 6
+            elif pressed(db3):
+                b1C -= 1
+                b1C = max(0, b1C)
 
             if pressed(ab1):
                 selection = selections[b1C-1]
@@ -395,7 +396,7 @@ def rpg_battle_test(player, enemy_level):
                 battle_state = 4
                 if current_enemy.hp >= 0:
                     e_has_attacked = True
-                    e_projectiles.append(Projectile(SW, int(SH-eh), random.randint(-99999, 99999), eatkbaw, eatkbah, ba=e_atk_ba, speed=int(max(current_enemy.speed, 5))))
+                    e_projectiles.append(Projectile(SW, int(SH-eh), random.randint(-99999, 99999), eatkbaw, eatkbah, ba=e_atk_ba, speed=int(max(current_enemy.speed, 8))))
                     ex -= e_atk_move
                     e_atk_turn = rpg_u.attack_calc(current_enemy.attack, player.defense, player.speed, current_enemy.acc, 1.15, 1, current_enemy.lvl, player.lvl, False, False, False)
                     print(f"Enemy Atk made: {e_atk_turn}")
@@ -431,12 +432,12 @@ def rpg_battle_test(player, enemy_level):
         player.attack_list = [p for p in player.attack_list if p.x < SW]
         for projectile in player.attack_list:
             d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
-            projectile.x += projectile.shot_speed_mult
+            projectile.x += int(projectile.shot_speed_mult * 2) # for now
 
         e_projectiles = [p for p in e_projectiles if p.x > 0]
         for projectile in e_projectiles:
             d1.draw_bitmap_array_raw(projectile.ba, projectile.x, projectile.y, projectile.w, projectile.h)
-            projectile.x -= projectile.shot_speed_mult
+            projectile.x -= int(projectile.shot_speed_mult * 2) # ^
 
         run_screens(lt)
 
@@ -451,14 +452,24 @@ def rpg_shop_test(money):
     selections = ["Acc", "Speed", "Atk", "Def", "Potion"]
     shop_k_y = 0
     shop_k_x = 30
+    bought = True
     while True:
+        if bought:
+            shop_text = "please buy.. im hungry"
         if pressed(quit_b):
             print("ending early!")
             break
-        lt = ticks_ms()
         if pressed(ab2):
+            print("leaving shop")
+            sleep(.5)
+            return
+        lt = ticks_ms()
+        if pressed(db1):
             b1C += 1
             b1C %= 5
+        elif pressed(db3):
+            b1C -= 1
+            b1C = max(0, b1C)
         ui_shop(money, b1C+1) # re use so need to add 1?
         print(f"B1C: {b1C}")
         if pressed(ab1):
@@ -467,15 +478,100 @@ def rpg_shop_test(money):
             cost = 20
             if selection == "Potion":
                 cost = 10
-            print("Buying : ", selection)
-            print(f"You have {money} and cost is {cost}")
+            bought = handle_shop_choice(selection, player, cost)
+            if not bought:
+                shop_text = "nothing for me or you.."
             selection = None
         d1.draw_bitmap_array_raw(shop_keep, shop_k_x, shop_k_y, 63, 47)
-        draw_text(max(shop_k_x + 63, SW), max(shop_k_y - 5, 0), "please buy.. im hungry", padding=2, isOne=True)
+        draw_text(max(shop_k_x + 63, SW), max(shop_k_y - 5, 0), f"{shop_text}", padding=2, isOne=True)
         shop_k_y += random.randint(-2, 2)
         shop_k_x += random.randint(-2, 2)
         shop_k_x = Constants.constrained_between(shop_k_x, 0, SW - 63)
         shop_k_y = Constants.constrained_between(shop_k_y, 0, SH - 47)
+        run_screens(lt)
+    return
+
+def handle_shop_choice(selection, player, cost):
+    money = player.money
+    print(f"You have {money} and cost is {cost}")
+    if money >= cost:
+        player.get_item(selection)
+        player.money -= cost
+        print("Buying : ", selection)
+    else:
+        print("sorry, can not afford")
+        return False
+    return True
+
+def bank_deposit_withdrawl_ui(player):
+    b1C = 0
+    total = 0
+    while True:
+        if pressed(quit_b):
+            print("ending early!")
+            break
+        b1CY = max(b1C, 1)
+        if pressed(db3):
+            b1C += 1
+            b1C %= 3
+        if pressed(db1):
+            b1C -= 1
+            b1C = max(0, b1C)
+
+        if pressed(ab1): # 2 or 1?
+            # get b1C and add to total
+            total += 10
+        draw_text(128, 20, "+10", padding=2, isOne=False)
+        draw_text(128, 40, "-10", padding=2, isOne=False)
+        draw_text(0, 44, "Leave", padding=2, isOne=False)
+        draw_text(0, 10, "Select ->", padding=2, isOne=False)
+        d2.draw_rectangle(0, b1CY*20 - 2, SW, 12)
+        d2.draw_rectangle(0, 0, SW, SH)
+
+        draw_text(128, 50, f"{total}", padding=2, isOne=False)
+    return total
+
+def handle_bank_choice(choice, player):
+    if choice == 'u':
+        cost = player.bank_level * 10
+        if player.money >= cost:
+            player.bank_level += 1
+            player.bank_interest += 3
+            # TODO: need to modify UI changed value to reflect new bank_level, intrest rate and upgrade cost....
+        #check player money is enough for curr_player_bank_cost <- base it on curr bank level?
+    elif choice == 'd':
+        d2.clear_buffers()
+        # get some kind of amount *_;
+        deposit_amount = bank_deposit_withdrawl_ui(player)
+        # add to player bank amount, decrement player money
+    elif choice == 'w':
+        d2.clear_buffers()
+        withdrawl_amount = bank_deposit_withdrawl_ui(player)
+        # another UI.... with some amount to enter ;_*
+        # inverse above
+    return
+
+def rpg_bank(player):
+    b1C = 0
+    # TODO: upon loading bank, handle days past and accrue interest
+    options = ["d", "w", "u"]
+    while True:
+        lt = ticks_ms()
+        if pressed(quit_b):
+            print("ending early!")
+            break
+        if pressed(db1):
+            b1C += 1
+            b1C %= 3
+        elif pressed(db3):
+            b1C -= 1
+            b1C = max(0, b1C)
+        elif pressed(ab2):
+            print("Bank action")
+            choice = options[b1C] # why is it named b1C? wakademasen
+            handle_bank_choice(choice, player)
+        ui_bank(player.money, player.bank_intrest, player.bank_level, b1C+1) # re use so need to add 1?
+        d1.draw_bitmap_array_raw(bank_bg, 0, 0, 113, 64)
         run_screens(lt)
     return
 
@@ -490,8 +586,14 @@ def run_the_sequence():
         if choice == "Battle":
             rpg_battle_test(player, enemy_level)
             enemy_level += 1
-        else:
+            player.handle_money_intrest()
+        elif choice == "Store":
             rpg_shop_test(player.money)
+        elif choice == "Bank":
+            rpg_bank(player)
+        else:
+            print("Hmm how did you do this?")
+            break
         print("Enemy level up: ", enemy_level)
     return
 
@@ -508,6 +610,9 @@ d1.cleanup()
 d2.cleanup()
 
 
+
+
 print('Done.')
+
 
 
